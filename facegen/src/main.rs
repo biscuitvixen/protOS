@@ -5,6 +5,8 @@ use std::io::{self, BufWriter, Write};
 
 use clap::{Parser, Subcommand};
 use facegen::contract;
+use facegen::layout::atlas::Atlas;
+use facegen::layout::{Layout, presets};
 
 #[derive(Parser)]
 #[command(
@@ -21,6 +23,11 @@ struct Cli {
 enum Command {
     /// Print every input the face accepts: index, OSC address, feature, side, range.
     Inputs,
+    /// Show a layout: validation, atlas packing and each panel's face-space transform.
+    Layout {
+        /// A preset name (two_64x32, six_panel) or a path to a layout TOML file.
+        layout: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -30,6 +37,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Inputs => print_inputs(),
+        Command::Layout { layout } => print_layout(&load_layout(&layout)?),
     };
     // A reader closing the pipe early (`facegen inputs | head`) is a
     // normal way to stop, not an error.
@@ -37,6 +45,81 @@ fn main() -> anyhow::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
         other => Ok(other?),
     }
+}
+
+/// A preset name first, then a file path.
+fn load_layout(spec: &str) -> anyhow::Result<Layout> {
+    if let Some(layout) = presets::load(spec) {
+        return Ok(layout);
+    }
+    let text = std::fs::read_to_string(spec).map_err(|e| {
+        anyhow::anyhow!(
+            "{spec} is not a preset ({}) and could not be read: {e}",
+            presets::NAMES.join(", ")
+        )
+    })?;
+    Ok(Layout::from_toml(&text)?)
+}
+
+fn print_layout(layout: &Layout) -> io::Result<()> {
+    let mut out = BufWriter::new(io::stdout().lock());
+    writeln!(
+        out,
+        "layout {:?}: {:?}, {} address lines, {} planes",
+        layout.name, layout.driver.pinout, layout.driver.n_addr_lines, layout.driver.n_planes
+    )?;
+    let atlas = match Atlas::build(layout) {
+        Ok(atlas) => atlas,
+        Err(e) => {
+            writeln!(out, "invalid: {e}")?;
+            return out.flush();
+        }
+    };
+    writeln!(out, "atlas {} x {} px", atlas.width, atlas.height)?;
+    for (panel, rect) in layout.panels.iter().zip(&atlas.rects) {
+        let t = panel.transform();
+        let (min, max) = t.bounds_mm(panel.size_px);
+        writeln!(
+            out,
+            "\n{:?}  {:?}  {}x{} px @ {} mm  rot {}  connector {} chain {}",
+            panel.name,
+            panel.side,
+            panel.width(),
+            panel.height(),
+            panel.pitch_mm,
+            u16::from(panel.rotation),
+            panel.connector,
+            panel.chain_index
+        )?;
+        writeln!(
+            out,
+            "  atlas   x {:>3} y {:>3} w {:>3} h {:>3}",
+            rect.x, rect.y, rect.w, rect.h
+        )?;
+        writeln!(
+            out,
+            "  col_u   [{:>7.2} {:>7.2}] mm   col_v [{:>7.2} {:>7.2}] mm",
+            t.col_u[0], t.col_u[1], t.col_v[0], t.col_v[1]
+        )?;
+        writeln!(
+            out,
+            "  origin  [{:>7.2} {:>7.2}] mm   bounds x [{:.1}, {:.1}]  y [{:.1}, {:.1}]",
+            t.origin[0], t.origin[1], min[0], max[0], min[1], max[1]
+        )?;
+        let c0 = t.pixel_centre_mm(0, 0);
+        let c1 = t.pixel_centre_mm(panel.width() - 1, panel.height() - 1);
+        writeln!(
+            out,
+            "  pixel (0,0) -> [{:.1} {:.1}] mm   pixel ({},{}) -> [{:.1} {:.1}] mm",
+            c0[0],
+            c0[1],
+            panel.width() - 1,
+            panel.height() - 1,
+            c1[0],
+            c1[1]
+        )?;
+    }
+    out.flush()
 }
 
 fn print_inputs() -> io::Result<()> {

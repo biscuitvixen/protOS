@@ -6,3 +6,4 @@
 //! pushed to the panels. Each module is one area of that pipeline.
 
 pub mod contract;
+pub mod layout;

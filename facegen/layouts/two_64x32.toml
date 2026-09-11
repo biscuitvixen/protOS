@@ -1,0 +1,34 @@
+# Two 64x32 panels, one per visor side, on an Adafruit Matrix Bonnet
+# as a single chain. The right panel is mounted upside down so both
+# cables exit toward the rear. Chain order (which panel sits nearest
+# the Pi) is a guess until confirmed on hardware.
+#
+# Face-space per side: millimetres, x = 0 at the centre line, +x
+# outward toward that side's ear, +y up. A P3 panel is 192 x 96 mm.
+name = "two_64x32"
+
+[driver]
+pinout = "adafruit_matrix_bonnet"
+n_addr_lines = 4
+n_planes = 8
+n_temporal_planes = 0
+
+[[panel]]
+name = "right"
+side = "right"
+size_px = [64, 32]
+pitch_mm = 3.0
+centre_mm = [96.0, 0.0]
+rotation = 180
+connector = 0
+chain_index = 0
+
+[[panel]]
+name = "left"
+side = "left"
+size_px = [64, 32]
+pitch_mm = 3.0
+centre_mm = [96.0, 0.0]
+rotation = 0
+connector = 0
+chain_index = 1
