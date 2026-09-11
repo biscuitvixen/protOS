@@ -7,6 +7,11 @@ use clap::{Parser, Subcommand};
 use facegen::contract;
 use facegen::layout::atlas::Atlas;
 use facegen::layout::{Layout, presets};
+use facegen::render::gpu::Gpu;
+use facegen::render::{Renderer, TEST_PATTERN_WGSL};
+use facegen::sinks::Frame;
+use facegen::sinks::png::write_png;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -28,6 +33,18 @@ enum Command {
         /// A preset name (two_64x32, six_panel) or a path to a layout TOML file.
         layout: String,
     },
+    /// Render one frame of the test pattern to a PNG.
+    Render {
+        /// A preset name or a path to a layout TOML file.
+        #[arg(long, default_value = "two_64x32")]
+        layout: String,
+        /// Output PNG path.
+        #[arg(long, default_value = "frame.png")]
+        out: PathBuf,
+        /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
+        #[arg(long)]
+        adapter: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -38,6 +55,14 @@ fn main() -> anyhow::Result<()> {
     let result = match cli.command {
         Command::Inputs => print_inputs(),
         Command::Layout { layout } => print_layout(&load_layout(&layout)?),
+        Command::Render {
+            layout,
+            out,
+            adapter,
+        } => {
+            render_once(&load_layout(&layout)?, &out, adapter.as_deref())?;
+            Ok(())
+        }
     };
     // A reader closing the pipe early (`facegen inputs | head`) is a
     // normal way to stop, not an error.
@@ -45,6 +70,26 @@ fn main() -> anyhow::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
         other => Ok(other?),
     }
+}
+
+fn render_once(
+    layout: &Layout,
+    out: &std::path::Path,
+    adapter: Option<&str>,
+) -> anyhow::Result<()> {
+    let gpu = Gpu::new(adapter)?;
+    let mut renderer = Renderer::new(gpu, layout, TEST_PATTERN_WGSL)?;
+    let mut frame = Frame::default();
+    renderer.render(&mut frame)?;
+    write_png(out, &frame)?;
+    println!(
+        "{} x {} atlas on {} -> {}",
+        frame.width,
+        frame.height,
+        renderer.gpu().info.name,
+        out.display()
+    );
+    Ok(())
 }
 
 /// A preset name first, then a file path.
