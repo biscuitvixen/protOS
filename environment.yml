@@ -1,0 +1,15 @@
+# Non-cargo tooling for protOS development. The Rust toolchain itself
+# comes from rustup (pinned by facegen/rust-toolchain.toml); the
+# conda-forge rust package pulls in conda's GCC and sysroot, which is
+# more than this project wants to link against.
+#
+#   micromamba create -p ./ENV -f environment.yml
+name: protos
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - cmake>=4
+  - ninja
+  - pkg-config
+  - vulkan-tools

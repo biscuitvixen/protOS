@@ -1,0 +1,22 @@
+# Workspace root: every Rust service in protOS is a member crate here.
+# One lock file and one target/ directory serve all of them, and the
+# shared settings below are inherited with `key.workspace = true`.
+[workspace]
+resolver = "3"
+members = ["facegen"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+# Version pins shared across members; a crate opts in with
+# `name = { workspace = true }` and may add features of its own.
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
