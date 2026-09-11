@@ -15,12 +15,16 @@ publish = false
 # `name = { workspace = true }` and may add features of its own.
 [workspace.dependencies]
 anyhow = "1.0"
+axum = { version = "0.8", features = ["ws"] }
 bytemuck = { version = "1.25", features = ["derive"] }
+bytes = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2.0"
 png = "0.18"
 pollster = "1.0"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
