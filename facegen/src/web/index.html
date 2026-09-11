@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>facegen</title>
+<style>
+  body { margin: 0; background: #14161a; color: #d8dbe0; font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; gap: 1.5em; align-items: baseline; padding: 0.6em 1em; background: #1d2026; }
+  header h1 { font-size: 1.1em; margin: 0; letter-spacing: 0.04em; }
+  #status { color: #8a919c; }
+  #error { color: #ff7a7a; }
+  main { display: grid; grid-template-columns: 1fr 22em; gap: 1em; padding: 1em; }
+  canvas#visor { width: 100%; background: #0a0b0d; border-radius: 6px; image-rendering: pixelated; }
+  aside { display: flex; flex-direction: column; gap: 0.8em; }
+  fieldset { border: 1px solid #2c3038; border-radius: 6px; }
+  legend { color: #8a919c; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  td, th { padding: 2px 3px; text-align: left; }
+  input[type=number], input[type=text], select { width: 100%; box-sizing: border-box; background: #0f1114; color: #d8dbe0; border: 1px solid #2c3038; border-radius: 3px; padding: 2px 4px; }
+  input.short { width: 4.5em; }
+  button { background: #2b6cb0; color: white; border: 0; border-radius: 4px; padding: 0.4em 0.9em; cursor: pointer; }
+  label.inline { display: inline-flex; gap: 0.4em; align-items: center; margin-right: 1em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>facegen</h1>
+  <span id="status">connecting</span>
+  <span id="error"></span>
+</header>
+<main>
+  <canvas id="visor" width="1200" height="600"></canvas>
+  <aside>
+    <fieldset>
+      <legend>layout</legend>
+      <label>preset <select id="preset"></select></label>
+      <div style="margin-top:0.5em">
+        <label class="inline"><input type="checkbox" id="mask" checked> LED mask</label>
+        <label class="inline"><input type="checkbox" id="gamma" checked> panel gamma</label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>panels (mm, px)</legend>
+      <table id="panels"><thead><tr><th>name</th><th>side</th><th>w</th><th>h</th><th>pitch</th><th>cx</th><th>cy</th><th>rot</th><th>con</th><th>chain</th></tr></thead><tbody></tbody></table>
+      <div style="margin-top:0.5em"><button id="apply">apply</button></div>
+    </fieldset>
+  </aside>
+</main>
+<script>
+"use strict";
+const status = document.getElementById("status");
+const errorBox = document.getElementById("error");
+const visor = document.getElementById("visor");
+const ctx = visor.getContext("2d", { alpha: false });
+const presetSelect = document.getElementById("preset");
+const panelsBody = document.querySelector("#panels tbody");
+const maskToggle = document.getElementById("mask");
+const gammaToggle = document.getElementById("gamma");
+
+let info = null;          // last layout message
+let latest = null;        // newest frame ArrayBuffer whose generation matches
+let panels = [];          // per-panel drawing state
+let gammaTable = null;    // Uint8Array(256): panel-predicted sRGB byte per input byte
+let frameCount = 0, lastFpsTime = performance.now(), fps = 0;
+
+// Piomatter: lut[i] = max(i, round(1023 * (i/255)^2.2)), then the top
+// n_planes bits are shown. Re-encode the linear result as sRGB so the
+// monitor shows what the panel would emit.
+function buildGammaTable(nPlanes) {
+  const t = new Uint8Array(256);
+  const drop = 10 - nPlanes;
+  for (let i = 0; i < 256; i++) {
+    let lut = Math.max(i, Math.round(1023 * Math.pow(i / 255, 2.2)));
+    lut = (lut >> drop) << drop;
+    const lin = lut / 1023;
+    const s = lin <= 0.0031308 ? 12.92 * lin : 1.055 * Math.pow(lin, 1 / 2.4) - 0.055;
+    t[i] = Math.round(Math.max(0, Math.min(1, s)) * 255);
+  }
+  return t;
+}
+
+const maskCache = new Map();
+function ledMask(w, h) {
+  const key = w + "x" + h;
+  if (maskCache.has(key)) return maskCache.get(key);
+  const s = 8;
+  const c = document.createElement("canvas");
+  c.width = w * s; c.height = h * s;
+  const g = c.getContext("2d");
+  g.fillStyle = "#0a0b0d";
+  g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = "destination-out";
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    g.beginPath();
+    g.arc((x + 0.5) * s, (y + 0.5) * s, 0.42 * s, 0, Math.PI * 2);
+    g.fill();
+  }
+  maskCache.set(key, c);
+  return c;
+}
+
+function applyLayout(msg) {
+  info = msg;
+  latest = null;
+  gammaTable = buildGammaTable(msg.layout.driver.n_planes);
+  // Viewer faces the wearer: the wearer's left side is on screen right.
+  // screen(u, v) = (sigma * face.x, -face.y) scaled to fit the canvas.
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  panels = msg.panels.map((p, i) => {
+    const panel = msg.layout.panel[i];
+    const sigma = panel.side === "left" ? 1 : -1;
+    const [w, h] = panel.size_px;
+    const t = p.transform;
+    const corner = (u, v) => [sigma * (t.origin[0] + t.col_u[0] * u + t.col_v[0] * v), -(t.origin[1] + t.col_u[1] * u + t.col_v[1] * v)];
+    for (const [x, y] of [corner(0, 0), corner(w, 0), corner(0, h), corner(w, h)]) {
+      minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y);
+    }
+    const off = document.createElement("canvas");
+    off.width = w; off.height = h;
+    return { panel, sigma, w, h, t, atlas: p.atlas, off, offCtx: off.getContext("2d"), image: new ImageData(w, h) };
+  });
+  const pad = 24;
+  const k = Math.min((visor.width - 2 * pad) / (maxx - minx), (visor.height - 2 * pad) / (maxy - miny));
+  const x0 = pad - k * minx + ((visor.width - 2 * pad) - k * (maxx - minx)) / 2;
+  const y0 = pad - k * miny + ((visor.height - 2 * pad) - k * (maxy - miny)) / 2;
+  for (const p of panels) {
+    const { sigma, t } = p;
+    // Canvas transform (a, b, c, d, e, f): screen = (a u + c v + e, b u + d v + f).
+    p.xform = [k * sigma * t.col_u[0], -k * t.col_u[1], k * sigma * t.col_v[0], -k * t.col_v[1], k * sigma * t.origin[0] + x0, -k * t.origin[1] + y0];
+  }
+  presetSelect.innerHTML = msg.presets.map(n => `<option value="${n}">${n}</option>`).join("");
+  presetSelect.value = msg.layout.name;
+  panelsBody.innerHTML = msg.layout.panel.map((p, i) => `<tr data-i="${i}">
+    <td><input type="text" name="name" value="${p.name}"></td>
+    <td><select name="side"><option ${p.side === "left" ? "selected" : ""}>left</option><option ${p.side === "right" ? "selected" : ""}>right</option></select></td>
+    <td><input class="short" type="number" name="w" value="${p.size_px[0]}"></td>
+    <td><input class="short" type="number" name="h" value="${p.size_px[1]}"></td>
+    <td><input class="short" type="number" step="0.5" name="pitch" value="${p.pitch_mm}"></td>
+    <td><input class="short" type="number" step="1" name="cx" value="${p.centre_mm[0]}"></td>
+    <td><input class="short" type="number" step="1" name="cy" value="${p.centre_mm[1]}"></td>
+    <td><select name="rot">${[0, 90, 180, 270].map(r => `<option ${p.rotation === r ? "selected" : ""}>${r}</option>`).join("")}</select></td>
+    <td><input class="short" type="number" name="con" value="${p.connector}"></td>
+    <td><input class="short" type="number" name="chain" value="${p.chain_index}"></td>
+  </tr>`).join("");
+  status.textContent = `${msg.gpu} | ${msg.layout.name} | atlas ${msg.atlas_width}x${msg.atlas_height} | gen ${msg.generation}`;
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  if (!info || !latest) return;
+  const bytes = new Uint8Array(latest, 8);
+  const stride = info.atlas_width * 4;
+  const useGamma = gammaToggle.checked;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0a0b0d";
+  ctx.fillRect(0, 0, visor.width, visor.height);
+  ctx.imageSmoothingEnabled = false;
+  for (const p of panels) {
+    const d = p.image.data;
+    for (let y = 0; y < p.h; y++) {
+      let src = (p.atlas.y + y) * stride + p.atlas.x * 4;
+      let dst = y * p.w * 4;
+      for (let x = 0; x < p.w; x++, src += 4, dst += 4) {
+        const b = bytes[src], g = bytes[src + 1], r = bytes[src + 2];
+        d[dst] = useGamma ? gammaTable[r] : r;
+        d[dst + 1] = useGamma ? gammaTable[g] : g;
+        d[dst + 2] = useGamma ? gammaTable[b] : b;
+        d[dst + 3] = 255;
+      }
+    }
+    p.offCtx.putImageData(p.image, 0, 0);
+    ctx.setTransform(...p.xform);
+    ctx.drawImage(p.off, 0, 0);
+    if (maskToggle.checked) ctx.drawImage(ledMask(p.w, p.h), 0, 0, p.w, p.h);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#8a919c";
+  ctx.fillText(`${fps.toFixed(0)} fps`, 8, visor.height - 8);
+}
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { status.textContent = "connected"; errorBox.textContent = ""; };
+  ws.onclose = () => { status.textContent = "disconnected, retrying"; setTimeout(connect, 1000); };
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === "string") {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "layout") applyLayout(msg);
+      else if (msg.type === "error") errorBox.textContent = msg.message;
+      return;
+    }
+    if (!info) return;
+    const gen = new DataView(ev.data).getUint32(4, true);
+    if (gen !== info.generation) return;
+    latest = ev.data;
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime > 1000) { fps = frameCount * 1000 / (now - lastFpsTime); frameCount = 0; lastFpsTime = now; }
+  };
+  presetSelect.onchange = () => ws.send(JSON.stringify({ type: "layout", preset: presetSelect.value }));
+  document.getElementById("apply").onclick = () => {
+    const rows = [...panelsBody.querySelectorAll("tr")];
+    const field = (row, name) => row.querySelector(`[name=${name}]`).value;
+    const layout = {
+      name: "custom",
+      driver: info.layout.driver,
+      panel: rows.map(row => ({
+        name: field(row, "name"), side: field(row, "side"),
+        size_px: [Number(field(row, "w")), Number(field(row, "h"))],
+        pitch_mm: Number(field(row, "pitch")),
+        centre_mm: [Number(field(row, "cx")), Number(field(row, "cy"))],
+        rotation: Number(field(row, "rot")),
+        connector: Number(field(row, "con")), chain_index: Number(field(row, "chain")),
+      })),
+    };
+    errorBox.textContent = "";
+    ws.send(JSON.stringify({ type: "layout", layout }));
+  };
+}
+connect();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

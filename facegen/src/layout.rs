@@ -192,7 +192,7 @@ impl Panel {
 /// displacement for one step along u and along v. Each column has
 /// length `px_mm`, so the panel's physical footprint is
 /// |col_u| * width by |col_v| * height.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct PanelTransform {
     pub col_u: [f32; 2],
     pub col_v: [f32; 2],

@@ -11,6 +11,7 @@ use facegen::render::gpu::Gpu;
 use facegen::render::{Renderer, TEST_PATTERN_WGSL};
 use facegen::sinks::Frame;
 use facegen::sinks::png::write_png;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -20,6 +21,9 @@ use std::path::PathBuf;
     about = "GPU-rendered procedural protogen face"
 )]
 struct Cli {
+    /// More log detail (-v debug, -vv trace). RUST_LOG overrides.
+    #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+    verbose: u8,
     #[command(subcommand)]
     command: Command,
 }
@@ -32,6 +36,18 @@ enum Command {
     Layout {
         /// A preset name (two_64x32, six_panel) or a path to a layout TOML file.
         layout: String,
+    },
+    /// Run the render loop with the browser harness.
+    Serve {
+        /// A preset name or a path to a layout TOML file.
+        #[arg(long, default_value = "two_64x32")]
+        layout: String,
+        /// Address to listen on; 0.0.0.0 makes it reachable over Tailscale.
+        #[arg(long, default_value = "0.0.0.0:8080")]
+        bind: SocketAddr,
+        /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
+        #[arg(long)]
+        adapter: Option<String>,
     },
     /// Render one frame of the test pattern to a PNG.
     Render {
@@ -48,13 +64,19 @@ enum Command {
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
     let cli = Cli::parse();
+    init_logging(cli.verbose);
     let result = match cli.command {
         Command::Inputs => print_inputs(),
         Command::Layout { layout } => print_layout(&load_layout(&layout)?),
+        Command::Serve {
+            layout,
+            bind,
+            adapter,
+        } => {
+            serve(load_layout(&layout)?, bind, adapter.as_deref())?;
+            Ok(())
+        }
         Command::Render {
             layout,
             out,
@@ -70,6 +92,42 @@ fn main() -> anyhow::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
         other => Ok(other?),
     }
+}
+
+/// Default to facegen's own info lines with the GPU stack quiet; -v adds
+/// debug, -vv trace; RUST_LOG replaces the whole filter.
+fn init_logging(verbose: u8) {
+    use tracing_subscriber::EnvFilter;
+    let level = match verbose {
+        0 => "info",
+        1 => "debug",
+        _ => "trace",
+    };
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(format!("warn,facegen={level}")));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(verbose > 0)
+        .init();
+}
+
+fn serve(layout: Layout, bind: SocketAddr, adapter: Option<&str>) -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let listener = runtime.block_on(facegen::web::bind(bind))?;
+    let gpu = Gpu::new(adapter)?;
+    let (shared, _render_thread) = facegen::app::start(gpu, layout)?;
+    let port = listener.local_addr()?.port();
+    println!("facegen harness:");
+    println!("  http://localhost:{port}/");
+    if bind.ip().is_unspecified() {
+        let host = std::fs::read_to_string("/etc/hostname")
+            .map(|h| h.trim().to_string())
+            .unwrap_or_default();
+        if !host.is_empty() {
+            println!("  http://{host}:{port}/");
+        }
+    }
+    runtime.block_on(facegen::web::serve(listener, shared))
 }
 
 fn render_once(

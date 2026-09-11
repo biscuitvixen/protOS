@@ -5,7 +5,9 @@
 //! the GPU renders every LED panel into one atlas that is read back and
 //! pushed to the panels. Each module is one area of that pipeline.
 
+pub mod app;
 pub mod contract;
 pub mod layout;
 pub mod render;
 pub mod sinks;
+pub mod web;

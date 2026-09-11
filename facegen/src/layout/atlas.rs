@@ -6,10 +6,12 @@
 //! Rotation and mirroring never appear here; they live in each panel's
 //! face-space transform.
 
+use serde::Serialize;
+
 use super::{Layout, LayoutError};
 
 /// Where a panel's pixels sit in the atlas, in atlas pixels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct AtlasRect {
     pub x: u32,
     pub y: u32,
@@ -18,7 +20,7 @@ pub struct AtlasRect {
 }
 
 /// Atlas size and one rect per panel, in the layout's panel order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Atlas {
     pub width: u32,
     pub height: u32,
