@@ -7,7 +7,7 @@ The face is not a set of bitmaps. Each feature (eye, mouth, nose) is a
 signed distance field in a WGSL fragment shader, parameterised in
 millimetres: an eye is a bent ellipse with a centre, radii, openness
 and gaze; a mouth is the region between two lip curves with a corner
-lift, an opening and a toothed lower edge. Every input is a named float
+lift, an opening and a sawtooth on both lips. Every input is a named float
 in [0, 1] (Project Babble's 45 blendshapes, the ARKit set, the protOS
 eye and voice channels). A rig maps them through a gain table in the
 face TOML onto those parameters, separately for each side so

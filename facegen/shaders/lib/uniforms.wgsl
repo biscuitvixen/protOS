@@ -15,7 +15,8 @@ struct Mouth {
     c_w: vec4<f32>,     // inner x, y, width, thickness
     curve: vec4<f32>,   // corner_dy, unused, gap, lower_dx
     lips: vec4<f32>,    // upper_dy, lower_dy, upper_thickness_scale, lower_thickness_scale
-    teeth: vec4<f32>,   // tooth height, tooth width, open taper, unused
+    teeth: vec4<f32>,   // tooth height, tooth base width, open taper, unused
+    tooth_row: vec4<f32>, // first tooth offset from the inner end, pitch, count, unused
     tongue: vec4<f32>,  // length, dx, dy, half_width
     colour: vec4<f32>,
 };

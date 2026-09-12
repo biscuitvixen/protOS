@@ -24,6 +24,7 @@ pub struct MouthUniform {
     pub curve: [f32; 4],
     pub lips: [f32; 4],
     pub teeth: [f32; 4],
+    pub tooth_row: [f32; 4],
     pub tongue: [f32; 4],
     pub colour: [f32; 4],
 }
@@ -75,12 +76,12 @@ pub const RIGHT: usize = 1;
 
 const _: () = {
     assert!(std::mem::size_of::<EyeUniform>() == 80);
-    assert!(std::mem::size_of::<MouthUniform>() == 96);
+    assert!(std::mem::size_of::<MouthUniform>() == 112);
     assert!(std::mem::size_of::<NoseUniform>() == 48);
     assert!(std::mem::size_of::<CheekUniform>() == 32);
-    assert!(std::mem::size_of::<SideUniform>() == 256);
+    assert!(std::mem::size_of::<SideUniform>() == 272);
     assert!(std::mem::size_of::<GlobalsUniform>() == 208);
-    assert!(std::mem::size_of::<FaceUniforms>() == 720);
+    assert!(std::mem::size_of::<FaceUniforms>() == 752);
     assert!(std::mem::offset_of!(FaceUniforms, sides) == 208);
 };
 

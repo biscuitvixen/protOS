@@ -3,11 +3,20 @@
 // share a parabolic corner lift symmetric about the centre line, so a
 // smile curls at the back of the snout. Opening pushes the lips apart
 // by a gap that tapers toward the corner, so the open mouth reads as a
-// wedge widest at the snout tip; the lower lip carries a triangle wave
-// for teeth. Closed, it collapses to a band of the authored thickness.
+// wedge widest at the snout tip. Both lips carry a row of triangular
+// teeth pointing outward, the upper row half a pitch out of phase with
+// the lower, so a closed mouth is an interlocking zigzag band and an
+// open one is a solid wedge with sawtooth edges.
 
-fn tri_wave(u: f32) -> f32 {
-    return 1.0 - 2.0 * abs(fract(u) - 0.5);
+// Distance to a row of teeth standing on the line y = base, pointing
+// in direction dir (+1 up, -1 down), tooth i centred at x0 + i * pitch.
+// Nearest tooth by limited repetition; exact while the base width is
+// no wider than the pitch.
+fn tooth_row_sdf(p: vec2<f32>, x0: f32, base: f32, dir: f32, m: Mouth) -> f32 {
+    let pitch = max(m.tooth_row.y, 0.5);
+    let i = clamp(round((p.x - x0) / pitch), 0.0, m.tooth_row.z - 1.0);
+    let q = vec2<f32>(p.x - x0 - i * pitch, dir * (base - p.y) + m.teeth.x);
+    return sd_isosceles(q, vec2<f32>(0.5 * m.teeth.y, m.teeth.x));
 }
 
 fn mouth_sdf(p: vec2<f32>, m: Mouth) -> f32 {
@@ -19,12 +28,21 @@ fn mouth_sdf(p: vec2<f32>, m: Mouth) -> f32 {
     let y = p.y - m.curve.x * t * t;
     let gap = m.curve.z * (1.0 - m.teeth.z * t);
     let upper = cy + half * m.lips.z + 0.35 * gap + m.lips.x;
-    var lower = cy - half * m.lips.w - 0.65 * gap + m.lips.y;
-    if (m.teeth.x > 0.0) {
-        // Jaw shear slides the tooth pattern sideways with the lower lip.
-        lower = lower - m.teeth.x * tri_wave((p.x - m.curve.w) / max(m.teeth.y, 0.5));
-    }
+    let lower = cy - half * m.lips.w - 0.65 * gap + m.lips.y;
     let dy = max(lower - y, y - upper);
     let dx = max(x_in - p.x, p.x - x_end);
-    return max(dx, dy);
+    var d = max(dx, dy);
+    if (m.tooth_row.z >= 1.0 && m.teeth.x > 0.0) {
+        let q = vec2<f32>(p.x, y);
+        // The lower row shears sideways with the jaw; the upper row
+        // stays with the snout.
+        let x_lower = m.tooth_row.x + m.curve.w;
+        let x_upper = m.tooth_row.x + 0.5 * m.tooth_row.y;
+        var teeth = min(
+            tooth_row_sdf(q, x_upper, upper, 1.0, m),
+            tooth_row_sdf(q, x_lower, lower, -1.0, m),
+        );
+        d = min(d, max(teeth, dx));
+    }
+    return d;
 }

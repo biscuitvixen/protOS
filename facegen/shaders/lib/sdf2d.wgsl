@@ -35,6 +35,22 @@ fn sd_capsule(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>, radius: f32) -> f32 {
     return sd_segment(p, a, b) - radius;
 }
 
+// Isosceles triangle with its apex at the origin and its base at
+// y = q.y, half-width q.x (Quilez, "2D distance functions",
+// sdTriangleIsosceles). Exact, so a steep tooth edge keeps a full
+// one-pixel anti-aliasing band.
+fn sd_isosceles(p_in: vec2<f32>, q: vec2<f32>) -> f32 {
+    let p = vec2<f32>(abs(p_in.x), p_in.y);
+    let a = p - q * clamp(dot(p, q) / dot(q, q), 0.0, 1.0);
+    let b = p - q * vec2<f32>(clamp(p.x / q.x, 0.0, 1.0), 1.0);
+    let s = -sign(q.y);
+    let d = min(
+        vec2<f32>(dot(a, a), s * (p.x * q.y - p.y * q.x)),
+        vec2<f32>(dot(b, b), s * (p.y - q.y)),
+    );
+    return -sqrt(d.x) * sign(d.y);
+}
+
 // Quadratic smooth union; k is the blend width in mm.
 fn smin(a: f32, b: f32, k: f32) -> f32 {
     let kk = max(k, 1e-4) * 4.0;
