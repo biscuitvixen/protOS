@@ -1,0 +1,82 @@
+# facegen
+
+Procedural face generation for protOS. Face blendshapes come in over
+OSC and LED panel frames go out, rendered on the GPU.
+
+The face is not a set of bitmaps. Each feature (eye, mouth, nose) is a
+signed distance field in a WGSL fragment shader, parameterised in
+millimetres: an eye is a bent ellipse with a centre, radii, openness
+and gaze; a mouth is the region between two lip curves with a corner
+lift, an opening and a toothed lower edge. Every input is a named float
+in [0, 1] (Project Babble's 45 blendshapes, the ARKit set, the protOS
+eye and voice channels). A rig maps them through a gain table in the
+face TOML onto those parameters, separately for each side so
+expressions can be asymmetric. All panels are rendered into one atlas
+laid out as the LED driver's framebuffer, with each panel carrying its
+own affine into face-space, so panel count, size, pitch and mounting
+are layout data rather than code. A browser page shows the same frames
+live.
+
+## Layout
+
+- `src/contract.rs` the input vocabulary and OSC addresses
+- `src/layout.rs` panels, face-space transforms, presets, atlas packing
+- `src/rig.rs` blendshapes to shape parameters
+- `src/render/` wgpu device, atlas target, passes, uniform block
+- `src/web/` the browser harness
+- `src/osc.rs`, `src/fake.rs` the bus receiver and a stand-in producer
+- `shaders/` WGSL, one file per feature; `faces/` face TOML;
+  `layouts/` panel presets
+
+## Run
+
+From the workspace root, so shader and face edits reload live:
+
+```
+cargo run -p facegen -- serve --bind 0.0.0.0:8081
+cargo run -p facegen -- fake
+```
+
+Open the printed link. The page has sliders for every input, a preset
+and scene selector, and an editable panel table. `serve` listens for
+OSC on 127.0.0.1:8888, Babble's default output port. Other commands:
+
+```
+cargo run -p facegen -- inputs                 # the input table
+cargo run -p facegen -- layout six_panel       # transforms and atlas
+cargo run -p facegen -- render --set jawOpen=1 --out open.png
+cargo run -p facegen -- render --scene cube --time 2.1 --out cube.png
+```
+
+`--adapter llvmpipe` forces Mesa's software Vulkan on any command.
+
+## Test
+
+```
+cargo test
+```
+
+Unit tests cover the contract, layout maths, rig, OSC parsing, shader
+validation and the watcher. The golden tests render each preset on
+lavapipe and compare against `tests/golden/*.png`; after an intended
+visual change regenerate them with `FACEGEN_UPDATE_GOLDENS=1 cargo
+test` and commit the PNGs. Goldens are pinned to lavapipe because
+output is byte-stable on one driver, not across drivers.
+
+## On the Pi 5
+
+Raspberry Pi OS Trixie Lite, no desktop needed:
+
+```
+sudo apt install mesa-vulkan-drivers libvulkan1 vulkan-tools
+sudo usermod -aG render,gpio $USER
+echo 'SUBSYSTEM=="*-pio", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-pio.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+cargo build --release -p facegen --features piomatter
+target/release/facegen serve --sink piomatter --bind 0.0.0.0:8081
+```
+
+The `piomatter` feature links Adafruit Piomatter (GPL-2.0-only) from
+`../piomatter-sys`, so a binary built with it is GPL-2.0-only when
+distributed. All panels on one Pi must share a scan depth; the layout
+validator says so if they do not.
