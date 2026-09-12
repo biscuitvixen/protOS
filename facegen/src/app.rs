@@ -25,7 +25,7 @@ use crate::render::gpu::Gpu;
 use crate::render::shader::{Assembled, FACE_SET};
 use crate::render::{Renderer, Scene, shader};
 use crate::rig::Rig;
-use crate::sinks::Frame;
+use crate::sinks::{Frame, FrameSink};
 
 /// Render period; the LED refresh is independent of this.
 pub const TICK: Duration = Duration::from_micros(16_667);
@@ -196,12 +196,17 @@ pub fn start(
     gpu: Gpu,
     layout: Layout,
     assets: Assets,
+    sink_names: &[String],
 ) -> anyhow::Result<(Arc<Shared>, thread::JoinHandle<()>)> {
     let face = assets.load_face()?;
     let shaders = assets.load_shaders()?;
     shaders.validate().map_err(anyhow::Error::msg)?;
     let renderer = Renderer::new(gpu, &layout, &shaders.source)?;
     let rig = Rig::new(&face)?;
+    let sinks = sink_names
+        .iter()
+        .map(|name| crate::sinks::by_name(name, &layout, renderer.atlas()))
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let info = LayoutInfo::new(1, &renderer, &layout);
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(Shared {
@@ -216,17 +221,25 @@ pub fn start(
     }
     let handle = thread::Builder::new().name("render".into()).spawn({
         let shared = Arc::clone(&shared);
-        move || render_loop(renderer, rig, layout, face, assets, shared, control_rx)
+        move || {
+            render_loop(
+                renderer, rig, layout, face, assets, sinks, shared, control_rx,
+            )
+        }
     })?;
     Ok((shared, handle))
 }
 
+// Everything the loop owns arrives once; a struct would only move the
+// argument list into an initialiser.
+#[allow(clippy::too_many_arguments)]
 fn render_loop(
     mut renderer: Renderer,
     mut rig: Rig,
     mut layout: Layout,
     mut face: Face,
     assets: Assets,
+    mut sinks: Vec<Box<dyn FrameSink + Send>>,
     shared: Arc<Shared>,
     control: mpsc::Receiver<Control>,
 ) {
@@ -299,6 +312,13 @@ fn render_loop(
             return;
         }
         stats.record(now.elapsed());
+        sinks.retain_mut(|sink| match sink.submit(&frame) {
+            Ok(()) => true,
+            Err(e) => {
+                shared.notify(false, format!("sink {} dropped: {e:#}", sink.name()));
+                false
+            }
+        });
         shared.frames.send_replace(Arc::new(frame));
         stats.maybe_log(shared.frames.receiver_count());
         next += TICK;

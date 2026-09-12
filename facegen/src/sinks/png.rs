@@ -17,6 +17,10 @@ impl FrameSink for PngSink {
     fn submit(&mut self, frame: &Frame) -> anyhow::Result<()> {
         write_png(&self.path, frame)
     }
+
+    fn name(&self) -> &'static str {
+        "png"
+    }
 }
 
 pub fn write_png(path: &Path, frame: &Frame) -> anyhow::Result<()> {

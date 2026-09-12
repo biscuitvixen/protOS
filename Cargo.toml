@@ -3,12 +3,13 @@
 # shared settings below are inherited with `key.workspace = true`.
 [workspace]
 resolver = "3"
-members = ["facegen"]
+members = ["facegen", "piomatter-sys"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
+license = "MIT"
 publish = false
 
 # Version pins shared across members; a crate opts in with

@@ -59,6 +59,9 @@ enum Command {
         /// Face to load from faces/<name>.toml.
         #[arg(long, default_value = "default")]
         face: String,
+        /// Frame sink besides the browser: piomatter (Pi 5 panels) or null. Repeatable.
+        #[arg(long)]
+        sink: Vec<String>,
         /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
         #[arg(long)]
         adapter: Option<String>,
@@ -110,13 +113,21 @@ fn main() -> anyhow::Result<()> {
             osc,
             assets,
             face,
+            sink,
             adapter,
         } => {
             let assets = facegen::app::Assets {
                 dir: assets.or_else(facegen::app::Assets::detect),
                 face,
             };
-            serve(load_layout(&layout)?, bind, osc, assets, adapter.as_deref())?;
+            serve(
+                load_layout(&layout)?,
+                bind,
+                osc,
+                assets,
+                &sink,
+                adapter.as_deref(),
+            )?;
             Ok(())
         }
         Command::Fake { to, rate } => {
@@ -178,6 +189,7 @@ fn serve(
     bind: SocketAddr,
     osc: SocketAddr,
     assets: facegen::app::Assets,
+    sinks: &[String],
     adapter: Option<&str>,
 ) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
@@ -187,7 +199,7 @@ fn serve(
         None => println!("assets: embedded (no live reload; pass --assets)"),
     }
     let gpu = Gpu::new(adapter)?;
-    let (shared, _render_thread) = facegen::app::start(gpu, layout, assets)?;
+    let (shared, _render_thread) = facegen::app::start(gpu, layout, assets, sinks)?;
     let _osc_thread = facegen::osc::start_receiver(osc, std::sync::Arc::clone(&shared.inputs))?;
     let port = listener.local_addr()?.port();
     println!("facegen harness:");

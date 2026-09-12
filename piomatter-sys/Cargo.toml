@@ -1,0 +1,15 @@
+[package]
+name = "piomatter-sys"
+description = "Rust binding to Adafruit Piomatter's C++ HUB75 driver for the Raspberry Pi 5"
+license = "GPL-2.0-only"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+links = "piomatter"
+
+[dependencies]
+thiserror.workspace = true
+
+[build-dependencies]
+cc = "1.2"
