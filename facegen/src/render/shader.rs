@@ -38,11 +38,13 @@ pub const NOSE: SourceFile = file!("features/nose.wgsl");
 pub const FACE: SourceFile = file!("face.wgsl");
 pub const TEST_PATTERN: SourceFile = file!("test_pattern.wgsl");
 pub const CUBE: SourceFile = file!("cube.wgsl");
+pub const PRESENT: SourceFile = file!("present.wgsl");
 
 /// The files of the face pass, in concatenation order.
 pub const FACE_SET: &[SourceFile] = &[UNIFORMS, PANEL_QUAD, SDF2D, EYE, MOUTH, NOSE, FACE];
 pub const TEST_PATTERN_SET: &[SourceFile] = &[UNIFORMS, PANEL_QUAD, SDF2D, TEST_PATTERN];
 pub const CUBE_SET: &[SourceFile] = &[UNIFORMS, CUBE];
+pub const PRESENT_SET: &[SourceFile] = &[PRESENT];
 
 /// An assembled module plus the table needed to map a line in it back
 /// to the file it came from.
@@ -137,7 +139,7 @@ mod tests {
 
     #[test]
     fn the_embedded_face_and_test_pattern_validate() {
-        for set in [FACE_SET, TEST_PATTERN_SET, CUBE_SET] {
+        for set in [FACE_SET, TEST_PATTERN_SET, CUBE_SET, PRESENT_SET] {
             let a = Assembled::load(set, None).unwrap();
             assert_eq!(a.validate(), Ok(()), "embedded shaders must validate");
         }

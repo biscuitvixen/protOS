@@ -275,3 +275,85 @@ fn a_capture_writes_an_animated_png_with_one_frame_per_tick() {
     reader.next_frame(&mut buf).expect("first frame decodes");
     std::fs::remove_file(&out).unwrap();
 }
+
+#[test]
+fn the_present_pass_draws_the_visor_view_with_the_wearers_left_on_the_viewers_right() {
+    use facegen::render::present::{PresentOptions, PresentPass};
+    use facegen::render::target::RenderTarget;
+    let layout = presets::load("two_64x32").unwrap();
+    let mut renderer = Renderer::new(lavapipe(), &layout, &shader::face_source()).unwrap();
+    let uniforms = face_uniforms(&layout);
+    let (w, h) = (400, 120);
+    let target = RenderTarget::with_format(
+        &renderer.gpu().device,
+        w,
+        h,
+        wgpu::TextureFormat::Rgba8Unorm,
+    );
+    let present = PresentPass::new(
+        &renderer.gpu().device,
+        wgpu::TextureFormat::Rgba8Unorm,
+        renderer.atlas_view(),
+    )
+    .unwrap();
+    let mut encoder = renderer
+        .gpu()
+        .device
+        .create_command_encoder(&Default::default());
+    renderer.draw_atlas(&uniforms, &mut encoder);
+    let atlas = renderer.atlas().clone();
+    present.draw(
+        &renderer.gpu().queue,
+        &mut encoder,
+        &target.view,
+        (w, h),
+        &layout,
+        &atlas,
+        &PresentOptions {
+            px_per_mm: 0.0,
+            apply_gamma: true,
+            led_mask: true,
+            srgb_encode: true,
+        },
+    );
+    target.copy_to_staging(&mut encoder);
+    let submission = renderer.gpu().queue.submit([encoder.finish()]);
+    let mut out = Frame::default();
+    target
+        .read_back(&renderer.gpu().device, submission, &mut out)
+        .unwrap();
+    // Rgba8 target: bytes are R, G, B, A.
+    let rgba = |x: u32, y: u32| {
+        let i = (y * w + x) as usize * 4;
+        [out.bgra[i], out.bgra[i + 1], out.bgra[i + 2]]
+    };
+    let eye = |c: [u8; 3]| c[2] > 150 && c[1] > 100 && c[0] < 60;
+    // Wearer's left eye at face (122, 16) mm sits right of centre and above the middle.
+    let mut left_eye_hits = 0;
+    let mut right_eye_hits = 0;
+    for y in 0..h {
+        for x in 0..w {
+            if eye(rgba(x, y)) {
+                if x > w / 2 && y < h / 2 {
+                    left_eye_hits += 1;
+                }
+                if x < w / 2 && y < h / 2 {
+                    right_eye_hits += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        left_eye_hits > 50,
+        "the wearer's left eye should be lit on the viewer's right: {left_eye_hits}"
+    );
+    assert!(
+        right_eye_hits > 50,
+        "the wearer's right eye should be lit on the viewer's left: {right_eye_hits}"
+    );
+    let corner = rgba(1, 1);
+    assert!(
+        corner.iter().all(|&v| v < 40),
+        "the padding should be dark: {corner:?}"
+    );
+}

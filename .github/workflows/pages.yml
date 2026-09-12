@@ -25,6 +25,12 @@ jobs:
       - name: Install Mesa's software Vulkan driver
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
       - run: cargo build --release -p facegen
+      - name: Build the browser demo
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl -sSfL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          wasm-pack build facegen/demo --target web --release --out-dir ../../_site/pkg --out-name facegen_web
+          rm -f _site/pkg/.gitignore _site/pkg/package.json
       - name: Render captures on lavapipe
         run: |
           set -e
@@ -36,7 +42,7 @@ jobs:
           $F capture --adapter llvmpipe --layout six_panel --scene cube --seconds 6 --fps 20 --scale 2 --out _site/captures/cube_six_panel.png
           $F render --adapter llvmpipe --test-pattern --out _site/captures/pattern_atlas.png
           $F render --adapter llvmpipe --set jawOpen=1 --set mouthSmileLeft=0.7 --out _site/captures/face_atlas_open.png
-          cp pages/index.html _site/
+          cp pages/index.html pages/demo.html _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -4,6 +4,7 @@
 
 #[cfg(feature = "piomatter")]
 pub mod piomatter;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod png;
 
 use crate::layout::Layout;

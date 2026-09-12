@@ -7,8 +7,6 @@
 //! shader surfaces as an error rather than a panic; hot reload relies
 //! on that.
 
-use anyhow::anyhow;
-
 use super::panels::INSTANCE_LAYOUT;
 use super::uniforms::UniformBinding;
 
@@ -23,6 +21,7 @@ impl PanelPipeline {
         shared: &UniformBinding,
         source: &str,
     ) -> anyhow::Result<Self> {
+        #[cfg(not(target_arch = "wasm32"))]
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("panel pass"),
@@ -62,8 +61,9 @@ impl PanelPipeline {
             multiview_mask: None,
             cache: None,
         });
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(error) = pollster::block_on(scope.pop()) {
-            return Err(anyhow!("shader or pipeline rejected: {error}"));
+            anyhow::bail!("shader or pipeline rejected: {error}");
         }
         Ok(Self { pipeline })
     }

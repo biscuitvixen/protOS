@@ -27,6 +27,7 @@ live.
 - `src/osc.rs`, `src/fake.rs` the bus receiver and a stand-in producer
 - `shaders/` WGSL, one file per feature; `faces/` face TOML;
   `layouts/` panel presets
+- `demo/` the browser build (wasm-bindgen entry over the same library)
 
 ## Run
 
@@ -62,6 +63,23 @@ lavapipe and compare against `tests/golden/*.png`; after an intended
 visual change regenerate them with `FACEGEN_UPDATE_GOLDENS=1 cargo
 test` and commit the PNGs. Goldens are pinned to lavapipe because
 output is byte-stable on one driver, not across drivers.
+
+## Browser demo
+
+`facegen/demo/` compiles the renderer, rig and shaders to WebAssembly
+and draws through WebGPU, presenting the atlas as the visor view. To
+try it locally:
+
+```
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+wasm-pack build facegen/demo --target web --release --out-dir ../../pages/pkg --out-name facegen_web
+python3 -m http.server -d pages 8090
+```
+
+Then open `http://localhost:8090/demo.html` in a browser with WebGPU
+(Chrome, Edge, Safari; Firefox on Linux needs a flag). The Pages
+workflow builds the same package and publishes it with the captures.
 
 ## On the Pi 5
 

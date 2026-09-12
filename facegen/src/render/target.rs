@@ -7,11 +7,6 @@
 //! the staging layout may be wider than the image; the padding is
 //! stripped on the way out.
 
-use std::sync::mpsc;
-use std::time::Duration;
-
-use anyhow::{Context, anyhow};
-
 use crate::sinks::Frame;
 
 /// sRGB-encoded BGRA: the shader works in linear light, the store
@@ -19,7 +14,8 @@ use crate::sinks::Frame;
 pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
 
 /// How long to wait for the GPU before treating a frame as lost.
-const READBACK_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(not(target_arch = "wasm32"))]
+const READBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub struct RenderTarget {
     pub width: u32,
@@ -32,6 +28,16 @@ pub struct RenderTarget {
 
 impl RenderTarget {
     pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
+        Self::with_format(device, width, height, FORMAT)
+    }
+
+    /// A readable target in any renderable 32-bit format.
+    pub fn with_format(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("atlas"),
             size: wgpu::Extent3d {
@@ -42,8 +48,10 @@ impl RenderTarget {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -90,13 +98,17 @@ impl RenderTarget {
     }
 
     /// Wait for `submission` and copy the staging buffer into `frame`,
-    /// dropping the row padding.
+    /// dropping the row padding. Blocking, so native only; the browser
+    /// presents the atlas through a pass instead of reading it back.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn read_back(
         &self,
         device: &wgpu::Device,
         submission: wgpu::SubmissionIndex,
         frame: &mut Frame,
     ) -> anyhow::Result<()> {
+        use anyhow::{Context, anyhow};
+        use std::sync::mpsc;
         let slice = self.staging.slice(..);
         let (tx, rx) = mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {

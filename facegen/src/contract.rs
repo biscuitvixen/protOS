@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use std::time::Instant;
+use web_time::Instant;
 
 /// Which facial feature an input drives. The rig groups parameters by
 /// feature; the web harness groups sliders the same way.

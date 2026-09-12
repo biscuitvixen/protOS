@@ -210,6 +210,14 @@ impl PanelTransform {
         ]
     }
 
+    /// Inverse of M as (a, b, c, d): for a face-space offset (dx, dy)
+    /// from the origin, u = a dx + b dy and v = c dx + d dy.
+    pub fn inverse(&self) -> [f32; 4] {
+        let (cu, cv) = (self.col_u, self.col_v);
+        let det = cu[0] * cv[1] - cv[0] * cu[1];
+        [cv[1] / det, -cv[0] / det, -cu[1] / det, cu[0] / det]
+    }
+
     pub fn pixel_centre_mm(&self, u: u32, v: u32) -> [f32; 2] {
         self.face_mm(u as f32 + 0.5, v as f32 + 0.5)
     }

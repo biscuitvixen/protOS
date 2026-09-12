@@ -3,7 +3,9 @@
 # shared settings below are inherited with `key.workspace = true`.
 [workspace]
 resolver = "3"
-members = ["facegen", "piomatter-sys"]
+members = ["facegen", "facegen/demo", "piomatter-sys"]
+# The browser demo only builds for wasm32; native cargo commands skip it.
+default-members = ["facegen", "piomatter-sys"]
 
 [workspace.package]
 version = "0.1.0"
@@ -33,6 +35,8 @@ tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "syn
 toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# Vulkan only: the GL backend's EGL enumeration panics on Pi OS and
-# nothing else is needed on Linux.
-wgpu = { version = "30.0", default-features = false, features = ["std", "vulkan", "wgsl"] }
+web-time = "1.1"
+# Backends are chosen per target in facegen/Cargo.toml: Vulkan on
+# native (the GL backend's EGL enumeration panics on Pi OS), WebGPU on
+# wasm.
+wgpu = { version = "30.0", default-features = false, features = ["std", "wgsl"] }

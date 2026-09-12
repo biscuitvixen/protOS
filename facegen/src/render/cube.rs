@@ -71,6 +71,7 @@ impl CubePass {
         source: &str,
         windows: Vec<Window>,
     ) -> anyhow::Result<Self> {
+        #[cfg(not(target_arch = "wasm32"))]
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("cube"),
@@ -153,6 +154,7 @@ impl CubePass {
             multiview_mask: None,
             cache: None,
         });
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(error) = pollster::block_on(scope.pop()) {
             anyhow::bail!("cube shader or pipeline rejected: {error}");
         }
@@ -322,9 +324,8 @@ pub fn window_projection(t: &PanelTransform, size_px: [u32; 2], eye: Vec3) -> Ma
         [0.0, 0.0, -1.0, eye.z],
     ])
     .transpose();
-    let (cu, cv, o) = (t.col_u, t.col_v, t.origin);
-    let det = cu[0] * cv[1] - cv[0] * cu[1];
-    let (a, b, c, d) = (cv[1] / det, -cv[0] / det, -cu[1] / det, cu[0] / det);
+    let o = t.origin;
+    let [a, b, c, d] = t.inverse();
     let (w, h) = (size_px[0] as f32, size_px[1] as f32);
     let su = 2.0 / w;
     let sv = 2.0 / h;

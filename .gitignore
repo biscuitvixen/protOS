@@ -213,3 +213,6 @@ models/
 # Working notes, kept local
 PLAN.md
 TODO.md
+
+# Browser demo package, built by wasm-pack (CI builds it for Pages)
+pages/pkg/

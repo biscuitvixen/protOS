@@ -255,22 +255,28 @@ fn render_loop(
         loop {
             match control.try_recv() {
                 Ok(Control::SetLayout(new_layout)) => {
-                    layout = new_layout;
-                    state.face_scale = fit_scale(&layout, face.box_mm);
                     let source = match assets.load_shaders() {
                         Ok(a) => a.source,
                         Err(_) => shader::face_source(),
                     };
-                    let gpu = renderer.into_gpu();
-                    // A failed rebuild leaves nothing to render with; the
-                    // sender validated the layout, so this is a GPU fault.
-                    renderer = match Renderer::new(gpu, &layout, &source) {
-                        Ok(r) => r,
+                    // The sender validated the layout, so a failure here is a
+                    // GPU fault; the old layout keeps rendering.
+                    if let Err(e) = renderer.rebuild(&new_layout, &source) {
+                        shared.notify(false, format!("layout rebuild failed: {e:#}"));
+                        continue;
+                    }
+                    layout = new_layout;
+                    state.face_scale = fit_scale(&layout, face.box_mm);
+                    sinks.retain_mut(|sink| match sink.relayout(&layout, renderer.atlas()) {
+                        Ok(()) => true,
                         Err(e) => {
-                            tracing::error!("renderer rebuild failed: {e:#}");
-                            return;
+                            shared.notify(
+                                false,
+                                format!("sink {} dropped on layout change: {e:#}", sink.name()),
+                            );
+                            false
                         }
-                    };
+                    });
                     generation += 1;
                     let info = LayoutInfo::new(generation, &renderer, &layout);
                     shared.layout.send_replace(Arc::new(info));

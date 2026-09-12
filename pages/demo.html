@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>facegen live demo</title>
+<style>
+  body { margin: 0; background: #14161a; color: #d8dbe0; font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; gap: 1.5em; align-items: baseline; padding: 0.6em 1em; background: #1d2026; }
+  header h1 { font-size: 1.1em; margin: 0; }
+  header a { color: #7ab8ff; }
+  #status { color: #8a919c; }
+  main { display: grid; grid-template-columns: 1fr 20em; gap: 1em; padding: 1em; }
+  canvas { width: 100%; aspect-ratio: 10 / 3; background: #0a0b0d; border-radius: 6px; }
+  aside { display: flex; flex-direction: column; gap: 0.8em; max-height: calc(100vh - 6em); overflow-y: auto; }
+  fieldset { border: 1px solid #2c3038; border-radius: 6px; }
+  legend { color: #8a919c; }
+  select { background: #0f1114; color: #d8dbe0; border: 1px solid #2c3038; border-radius: 3px; padding: 2px 4px; }
+  label.inline { display: inline-flex; gap: 0.4em; align-items: center; margin-right: 1em; }
+  #inputs details { margin: 0.2em 0; }
+  #inputs summary { cursor: pointer; color: #8a919c; }
+  .row { display: grid; grid-template-columns: 10em 1fr 3em; gap: 0.4em; align-items: center; font-size: 12px; }
+  input[type=range] { width: 100%; }
+  button { background: #2b6cb0; color: white; border: 0; border-radius: 4px; padding: 0.3em 0.8em; cursor: pointer; }
+  #fallback { padding: 2em; max-width: 40em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>facegen live demo</h1>
+  <span id="status">starting</span>
+  <a href="index.html">captures</a>
+  <a href="https://github.com/biscuitvixen/protOS">source</a>
+</header>
+<div id="fallback" hidden>
+  <p>This browser has no WebGPU, which the demo needs. Chrome, Edge and
+  Safari have it on; Firefox on Linux still hides it behind a flag.
+  The <a href="index.html">captures page</a> shows the same face pre-rendered.</p>
+</div>
+<main id="main">
+  <canvas id="visor"></canvas>
+  <aside>
+    <fieldset>
+      <legend>scene</legend>
+      <label>preset <select id="preset"></select></label>
+      <label style="margin-left:1em">scene <select id="scene"></select></label>
+      <div style="margin-top:0.5em">
+        <label class="inline"><input type="checkbox" id="fake"> animate with canned curves</label>
+      </div>
+      <div style="margin-top:0.3em">
+        <label class="inline"><input type="checkbox" id="mask" checked> LED mask</label>
+        <label class="inline"><input type="checkbox" id="gamma" checked> panel gamma</label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>inputs <button id="reset" style="float:right">reset</button></legend>
+      <div id="inputs"></div>
+    </fieldset>
+  </aside>
+</main>
+<script type="module">
+import init, { start, presets_json, scenes_json } from "./pkg/facegen_web.js";
+
+const status = document.getElementById("status");
+const canvas = document.getElementById("visor");
+const inputsBox = document.getElementById("inputs");
+
+if (!navigator.gpu) {
+  document.getElementById("fallback").hidden = false;
+  document.getElementById("main").hidden = true;
+  status.textContent = "no WebGPU";
+} else {
+  run().catch(e => { status.textContent = "failed: " + e; console.error(e); });
+}
+
+async function run() {
+  await init();
+  fitCanvas();
+  const demo = await start(canvas, "two_64x32");
+  status.textContent = "running";
+  const presetSelect = document.getElementById("preset");
+  const sceneSelect = document.getElementById("scene");
+  presetSelect.innerHTML = JSON.parse(presets_json()).map(n => `<option>${n}</option>`).join("");
+  sceneSelect.innerHTML = JSON.parse(scenes_json()).map(n => `<option>${n}</option>`).join("");
+  presetSelect.onchange = () => { try { demo.set_layout(presetSelect.value); } catch (e) { status.textContent = e; } };
+  sceneSelect.onchange = () => demo.set_scene(sceneSelect.value);
+  const fake = document.getElementById("fake");
+  fake.onchange = () => { demo.set_fake(fake.checked); buildInputs(demo); };
+  const mask = document.getElementById("mask"), gamma = document.getElementById("gamma");
+  mask.onchange = gamma.onchange = () => demo.set_options(gamma.checked, mask.checked);
+  document.getElementById("reset").onclick = () => { demo.reset_inputs(); buildInputs(demo); };
+  buildInputs(demo);
+  window.addEventListener("resize", () => { fitCanvas(); demo.resize(canvas.width, canvas.height); });
+  const loop = (t) => { try { demo.frame(t); } catch (e) { status.textContent = "frame failed: " + e; return; } requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}
+
+function fitCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  canvas.height = Math.max(1, Math.round(rect.height * dpr));
+}
+
+function buildInputs(demo) {
+  const inputs = JSON.parse(demo.inputs_json());
+  const groups = new Map();
+  for (const i of inputs) { if (!groups.has(i.feature)) groups.set(i.feature, []); groups.get(i.feature).push(i); }
+  inputsBox.innerHTML = [...groups].map(([feature, list]) => `<details ${feature === "Jaw" || feature === "Mouth" ? "open" : ""}>
+    <summary>${feature} (${list.length})</summary>
+    ${list.map(i => `<div class="row"><label title="${i.name}">${i.name}</label>
+      <input type="range" name="${i.name}" min="${i.signed ? -1 : 0}" max="1" step="0.01" value="${i.value}">
+      <output>${Number(i.value).toFixed(2)}</output></div>`).join("")}
+  </details>`).join("");
+  inputsBox.oninput = (ev) => {
+    const el = ev.target;
+    if (el.type !== "range") return;
+    el.nextElementSibling.value = Number(el.value).toFixed(2);
+    demo.set_input(el.name, Number(el.value));
+  };
+}
+</script>
+</body>
+</html>

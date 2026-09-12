@@ -4,10 +4,6 @@
 //! slow asymmetric smiles, blinks, wandering gaze and the odd sneer.
 
 use std::f32::consts::TAU;
-use std::thread;
-use std::time::{Duration, Instant};
-
-use crate::osc::Sender;
 
 /// Channel values at time `t` seconds, as (address, value) pairs.
 pub fn curves(t: f32) -> Vec<(&'static str, f32)> {
@@ -44,7 +40,10 @@ pub fn curves(t: f32) -> Vec<(&'static str, f32)> {
 }
 
 /// Send the curves to `sender` at `rate` Hz until the process ends.
-pub fn run(sender: &Sender, rate: f32) -> anyhow::Result<()> {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run(sender: &crate::osc::Sender, rate: f32) -> anyhow::Result<()> {
+    use std::thread;
+    use std::time::{Duration, Instant};
     let period = Duration::from_secs_f32(1.0 / rate);
     let started = Instant::now();
     let mut next = started;

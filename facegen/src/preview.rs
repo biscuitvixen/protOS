@@ -1,10 +1,11 @@
 //! Visor view on the CPU: the atlas drawn as the panels are mounted,
 //! one disc per LED, with the panel's gamma curve applied. This is the
-//! same picture the browser harness draws, produced without a browser
-//! so captures and documentation come straight out of the binary.
+//! same picture the browser harness and the present pass draw, produced
+//! without a GPU target so captures and documentation come straight out
+//! of the binary.
 
+use crate::layout::Layout;
 use crate::layout::atlas::Atlas;
-use crate::layout::{Layout, Side};
 use crate::sinks::Frame;
 
 /// An 8-bit RGB image, row-major.
@@ -33,6 +34,25 @@ pub fn gamma_table(n_planes: u8) -> [u8; 256] {
     table
 }
 
+/// Bounds of every panel in viewer space, millimetres: x to the
+/// viewer's right, y down, so screen(u, v) = (sigma * face.x, -face.y).
+pub fn visor_bounds(layout: &Layout) -> ([f32; 2], [f32; 2]) {
+    let mut min = [f32::INFINITY; 2];
+    let mut max = [f32::NEG_INFINITY; 2];
+    for panel in &layout.panels {
+        let t = panel.transform();
+        let sigma = panel.side.sigma();
+        let (w, h) = (panel.width() as f32, panel.height() as f32);
+        for (u, v) in [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h)] {
+            let f = t.face_mm(u, v);
+            let s = [sigma * f[0], -f[1]];
+            min = [min[0].min(s[0]), min[1].min(s[1])];
+            max = [max[0].max(s[0]), max[1].max(s[1])];
+        }
+    }
+    (min, max)
+}
+
 /// Draw `frame` as the viewer sees the visor, `px_per_mm` pixels per
 /// millimetre. The wearer's left side is on the right of the image.
 pub fn compose(
@@ -43,24 +63,7 @@ pub fn compose(
     apply_gamma: bool,
 ) -> Image {
     let pad = 6.0 * px_per_mm;
-    // screen(u, v) = (sigma * face.x, -face.y) for a panel's electrical pixel.
-    let mut min = [f32::INFINITY; 2];
-    let mut max = [f32::NEG_INFINITY; 2];
-    for panel in &layout.panels {
-        let t = panel.transform();
-        let sigma = if panel.side == Side::Left { 1.0 } else { -1.0 };
-        for (u, v) in [
-            (0.0, 0.0),
-            (panel.width() as f32, 0.0),
-            (0.0, panel.height() as f32),
-            (panel.width() as f32, panel.height() as f32),
-        ] {
-            let f = t.face_mm(u, v);
-            let s = [sigma * f[0], -f[1]];
-            min = [min[0].min(s[0]), min[1].min(s[1])];
-            max = [max[0].max(s[0]), max[1].max(s[1])];
-        }
-    }
+    let (min, max) = visor_bounds(layout);
     let width = ((max[0] - min[0]) * px_per_mm + 2.0 * pad).ceil() as u32;
     let height = ((max[1] - min[1]) * px_per_mm + 2.0 * pad).ceil() as u32;
     let mut image = Image {
@@ -75,7 +78,7 @@ pub fn compose(
     let stride = atlas.width as usize * Frame::BYTES_PER_PIXEL;
     for (panel, rect) in layout.panels.iter().zip(&atlas.rects) {
         let t = panel.transform();
-        let sigma = if panel.side == Side::Left { 1.0 } else { -1.0 };
+        let sigma = panel.side.sigma();
         let radius = 0.42 * panel.pitch_mm * px_per_mm;
         for v in 0..panel.height() {
             for u in 0..panel.width() {
@@ -143,7 +146,6 @@ mod tests {
         let i = 64 * Frame::BYTES_PER_PIXEL;
         frame.bgra[i..i + 4].copy_from_slice(&[0, 255, 0, 255]);
         let image = compose(&layout, &atlas, &frame, 2.0, false);
-        // The visor is 384 mm wide plus padding; the lit LED sits just right of the centre line, near the top.
         let centre_x = image.width / 2;
         let lit: Vec<(u32, u32)> = (0..image.height)
             .flat_map(|y| (0..image.width).map(move |x| (x, y)))

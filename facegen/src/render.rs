@@ -10,6 +10,7 @@ pub mod cube;
 pub mod gpu;
 pub mod panels;
 pub mod pipeline;
+pub mod present;
 pub mod shader;
 pub mod target;
 pub mod uniforms;
@@ -18,6 +19,7 @@ use wgpu::util::DeviceExt;
 
 use crate::layout::Layout;
 use crate::layout::atlas::Atlas;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::sinks::Frame;
 use cube::CubePass;
 use gpu::Gpu;
@@ -60,6 +62,7 @@ pub struct Renderer {
     scene: Scene,
     instances: wgpu::Buffer,
     instance_count: u32,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     seq: u64,
 }
 
@@ -101,6 +104,38 @@ impl Renderer {
         })
     }
 
+    /// Rebuild the atlas, passes and instances for a new layout on the
+    /// same device, keeping the scene. On failure the old state stays.
+    pub fn rebuild(&mut self, layout: &Layout, source: &str) -> anyhow::Result<()> {
+        let atlas = Atlas::build(layout)?;
+        let target = RenderTarget::new(&self.gpu.device, atlas.width, atlas.height);
+        let pipeline =
+            PanelPipeline::new(&self.gpu.device, target::FORMAT, &self.uniforms, source)?;
+        let cube = CubePass::new(
+            &self.gpu.device,
+            target::FORMAT,
+            (atlas.width, atlas.height),
+            &self.uniforms,
+            &shader::cube_source(),
+            CubePass::windows(layout, &atlas.rects),
+        )?;
+        let instance_data = panels::instances(layout, &atlas);
+        self.instances = self
+            .gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("panel instances"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        self.instance_count = instance_data.len() as u32;
+        self.atlas = atlas;
+        self.target = target;
+        self.pipeline = pipeline;
+        self.cube = cube;
+        Ok(())
+    }
+
     /// Replace the pass with a newly assembled source. On failure the
     /// current pipeline keeps rendering.
     pub fn rebuild_pipeline(&mut self, source: &str) -> anyhow::Result<()> {
@@ -130,9 +165,9 @@ impl Renderer {
         self.gpu
     }
 
-    /// Draw one frame with `uniforms` into the atlas and read it back
-    /// into `frame`. The atlas lane of the globals is filled in here.
-    pub fn render(&mut self, uniforms: &FaceUniforms, frame: &mut Frame) -> anyhow::Result<()> {
+    /// Record one frame with `uniforms` into the atlas texture. The atlas
+    /// lane of the globals is filled in here.
+    pub fn draw_atlas(&mut self, uniforms: &FaceUniforms, encoder: &mut wgpu::CommandEncoder) {
         let mut u = *uniforms;
         u.g.atlas = [
             self.atlas.width as f32,
@@ -141,12 +176,6 @@ impl Renderer {
             1.0 / self.atlas.height as f32,
         ];
         self.uniforms.write(&self.gpu.queue, &u);
-        let mut encoder = self
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("frame"),
-            });
         match self.scene {
             Scene::Face => {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -175,18 +204,35 @@ impl Renderer {
             Scene::Cube => {
                 self.cube.draw(
                     &self.gpu.queue,
-                    &mut encoder,
+                    encoder,
                     &self.target.view,
                     &self.uniforms,
                     u.g.time[0],
                 );
             }
         }
+    }
+
+    /// Draw one frame and read it back into `frame`, synchronously.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn render(&mut self, uniforms: &FaceUniforms, frame: &mut Frame) -> anyhow::Result<()> {
+        let mut encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame"),
+            });
+        self.draw_atlas(uniforms, &mut encoder);
         self.target.copy_to_staging(&mut encoder);
         let submission = self.gpu.queue.submit([encoder.finish()]);
         self.target.read_back(&self.gpu.device, submission, frame)?;
         self.seq += 1;
         frame.seq = self.seq;
         Ok(())
+    }
+
+    /// The atlas texture, for a present pass to sample.
+    pub fn atlas_view(&self) -> &wgpu::TextureView {
+        &self.target.view
     }
 }
