@@ -19,3 +19,11 @@ Those being:
 
 A protogen is an anthropomorhic cyborg. Relevant to this project: it
 has a visor with a digital display for a face.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The one exception is `piomatter-sys/`,
+a binding to Adafruit Piomatter, which is GPL-2.0-only; a facegen
+binary built with its `piomatter` feature is GPL-2.0-only when
+distributed. The Project Babble tracking model is fetched at setup
+time under its own non-commercial licence and is never committed.
