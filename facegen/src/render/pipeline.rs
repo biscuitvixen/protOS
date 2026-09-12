@@ -1,29 +1,20 @@
 //! A 2D pass: the shared panel-quad vertex stage plus one fragment
 //! shader, drawing every panel instance into the atlas.
 //!
-//! WGSL has no include, so the vertex stage and the fragment source are
-//! concatenated into one module. Shader and pipeline creation run
-//! inside a validation error scope so a broken shader surfaces as an
-//! error rather than a panic; hot reload later relies on that.
+//! The pass takes an already assembled WGSL module (see `shader.rs`)
+//! and binds the face uniform block at group 0. Shader and pipeline
+//! creation run inside a validation error scope so a broken shader
+//! surfaces as an error rather than a panic; hot reload later relies
+//! on that.
 
 use anyhow::anyhow;
-use bytemuck::{Pod, Zeroable};
 
 use super::panels::INSTANCE_LAYOUT;
-
-pub const PANEL_QUAD_WGSL: &str = include_str!("../../shaders/panel_quad.wgsl");
-
-/// Group 0, binding 0 of every 2D pass.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
-pub struct Globals {
-    /// Atlas width, height, 1/width, 1/height in pixels.
-    pub atlas: [f32; 4],
-}
+use super::uniforms::FaceUniforms;
 
 pub struct PanelPipeline {
     pipeline: wgpu::RenderPipeline,
-    globals: wgpu::Buffer,
+    uniforms: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
 }
 
@@ -31,16 +22,15 @@ impl PanelPipeline {
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
-        fragment_wgsl: &str,
+        source: &str,
     ) -> anyhow::Result<Self> {
-        let source = format!("{PANEL_QUAD_WGSL}\n{fragment_wgsl}");
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("panel pass"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("globals"),
+            label: Some("face uniforms"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -52,18 +42,18 @@ impl PanelPipeline {
                 count: None,
             }],
         });
-        let globals = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("globals"),
-            size: std::mem::size_of::<Globals>() as u64,
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("face uniforms"),
+            size: FaceUniforms::SIZE,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals"),
+            label: Some("face uniforms"),
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: globals.as_entire_binding(),
+                resource: uniforms.as_entire_binding(),
             }],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -105,13 +95,13 @@ impl PanelPipeline {
         }
         Ok(Self {
             pipeline,
-            globals,
+            uniforms,
             bind_group,
         })
     }
 
-    pub fn set_globals(&self, queue: &wgpu::Queue, globals: &Globals) {
-        queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(globals));
+    pub fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &FaceUniforms) {
+        queue.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(uniforms));
     }
 
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, instances: &wgpu::Buffer, count: u32) {

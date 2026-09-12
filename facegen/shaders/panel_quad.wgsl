@@ -3,11 +3,6 @@
 // into face-space, so the fragment stage receives face-space mm and
 // never knows which panel or side it is drawing.
 
-struct Globals {
-    atlas: vec4<f32>,   // atlas width, height, 1/width, 1/height (px)
-};
-@group(0) @binding(0) var<uniform> G: Globals;
-
 struct PanelInstance {
     @location(0) atlas_rect: vec4<f32>,  // x, y, w, h in atlas px
     @location(1) m: vec4<f32>,           // M columns: (col_u, col_v) in mm/px
@@ -28,7 +23,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: PanelInstance) -> VsOut {
     let c = vec2<f32>(f32(vi & 1u), f32(vi >> 1u));
     let a = inst.atlas_rect.xy + c * inst.atlas_rect.zw;
     var o: VsOut;
-    o.pos = vec4<f32>(2.0 * a.x * G.atlas.z - 1.0, 1.0 - 2.0 * a.y * G.atlas.w, 0.0, 1.0);
+    o.pos = vec4<f32>(2.0 * a.x * U.g.atlas.z - 1.0, 1.0 - 2.0 * a.y * U.g.atlas.w, 0.0, 1.0);
     // Electrical (u, v) at this corner; interpolation to the fragment's
     // pixel centre supplies the +0.5 without per-fragment matrix work.
     let e = c * inst.atlas_rect.zw;

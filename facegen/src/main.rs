@@ -5,10 +5,11 @@ use std::io::{self, BufWriter, Write};
 
 use clap::{Parser, Subcommand};
 use facegen::contract;
+use facegen::face::{Face, FrameState, fit_scale};
 use facegen::layout::atlas::Atlas;
 use facegen::layout::{Layout, presets};
 use facegen::render::gpu::Gpu;
-use facegen::render::{Renderer, TEST_PATTERN_WGSL};
+use facegen::render::{Renderer, shader};
 use facegen::sinks::Frame;
 use facegen::sinks::png::write_png;
 use std::net::SocketAddr;
@@ -60,6 +61,9 @@ enum Command {
         /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
         #[arg(long)]
         adapter: Option<String>,
+        /// Draw the bring-up test pattern instead of the face.
+        #[arg(long)]
+        test_pattern: bool,
     },
 }
 
@@ -81,8 +85,14 @@ fn main() -> anyhow::Result<()> {
             layout,
             out,
             adapter,
+            test_pattern,
         } => {
-            render_once(&load_layout(&layout)?, &out, adapter.as_deref())?;
+            render_once(
+                &load_layout(&layout)?,
+                &out,
+                adapter.as_deref(),
+                test_pattern,
+            )?;
             Ok(())
         }
     };
@@ -115,7 +125,7 @@ fn serve(layout: Layout, bind: SocketAddr, adapter: Option<&str>) -> anyhow::Res
     let runtime = tokio::runtime::Runtime::new()?;
     let listener = runtime.block_on(facegen::web::bind(bind))?;
     let gpu = Gpu::new(adapter)?;
-    let (shared, _render_thread) = facegen::app::start(gpu, layout)?;
+    let (shared, _render_thread) = facegen::app::start(gpu, layout, Face::default_face())?;
     let port = listener.local_addr()?.port();
     println!("facegen harness:");
     println!("  http://localhost:{port}/");
@@ -134,11 +144,22 @@ fn render_once(
     layout: &Layout,
     out: &std::path::Path,
     adapter: Option<&str>,
+    test_pattern: bool,
 ) -> anyhow::Result<()> {
     let gpu = Gpu::new(adapter)?;
-    let mut renderer = Renderer::new(gpu, layout, TEST_PATTERN_WGSL)?;
+    let source = if test_pattern {
+        shader::test_pattern_source()
+    } else {
+        shader::face_source()
+    };
+    let mut renderer = Renderer::new(gpu, layout, &source)?;
+    let face = Face::default_face();
+    let uniforms = face.pack(&FrameState {
+        face_scale: fit_scale(layout, face.box_mm),
+        ..Default::default()
+    });
     let mut frame = Frame::default();
-    renderer.render(&mut frame)?;
+    renderer.render(&uniforms, &mut frame)?;
     write_png(out, &frame)?;
     println!(
         "{} x {} atlas on {} -> {}",

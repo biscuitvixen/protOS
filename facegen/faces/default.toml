@@ -1,0 +1,46 @@
+# The default face, authored for a 192 x 96 mm side (a P3 64x32 panel).
+# Face-space per side: x = 0 at the centre line, +x toward the ear,
+# +y up, millimetres. Colours are sRGB hex. The snout tip is the inner
+# end, so the nose sits low in x and the eye toward the back.
+name = "default"
+box_mm = [192.0, 96.0]
+background = "#000000"
+close_mode = "squash"
+brightness = 1.0
+
+[eye]
+centre_mm = [122.0, 16.0]
+radii_mm = [30.0, 15.0]
+rotation_deg = -8.0
+bend = 0.25
+open = 1.0
+lower_close = 0.0
+gaze_mm = [0.0, 0.0]
+lid_tilt_deg = 0.0
+widen = 1.0
+colour = "#00d0ff"
+
+[eye.pupil]
+enabled = false
+offset_mm = [0.0, 0.0]
+scale = 0.35
+
+[mouth]
+inner_mm = [8.0, -28.0]
+width_mm = 150.0
+thickness_mm = 3.5
+corner_dy_mm = 16.0
+open = 0.0
+max_open_mm = 22.0
+lower_dx_mm = 0.0
+upper_lip_dy_mm = 0.0
+lower_lip_dy_mm = 0.0
+colour = "#00d0ff"
+
+[nose]
+centre_mm = [26.0, 20.0]
+radii_mm = [11.0, 6.5]
+rotation_deg = 22.0
+bend = 0.2
+nostril_lift_mm = 0.0
+colour = "#00d0ff"

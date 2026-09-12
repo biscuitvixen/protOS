@@ -7,6 +7,8 @@
 
 pub mod app;
 pub mod contract;
+pub mod face;
+pub mod features;
 pub mod layout;
 pub mod render;
 pub mod sinks;

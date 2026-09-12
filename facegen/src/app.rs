@@ -17,10 +17,11 @@ use serde::Serialize;
 use tokio::sync::watch;
 
 use crate::contract::InputStore;
+use crate::face::{Face, FrameState, fit_scale};
 use crate::layout::atlas::{Atlas, AtlasRect};
 use crate::layout::{Layout, PanelTransform, presets};
 use crate::render::gpu::Gpu;
-use crate::render::{Renderer, TEST_PATTERN_WGSL};
+use crate::render::{Renderer, shader};
 use crate::sinks::Frame;
 
 /// Render period; the LED refresh is independent of this.
@@ -89,8 +90,12 @@ pub struct Shared {
 
 /// Build the renderer for `layout`, publish its description, and start
 /// the render thread. Returns the shared state the web harness uses.
-pub fn start(gpu: Gpu, layout: Layout) -> anyhow::Result<(Arc<Shared>, thread::JoinHandle<()>)> {
-    let renderer = Renderer::new(gpu, &layout, TEST_PATTERN_WGSL)?;
+pub fn start(
+    gpu: Gpu,
+    layout: Layout,
+    face: Face,
+) -> anyhow::Result<(Arc<Shared>, thread::JoinHandle<()>)> {
+    let renderer = Renderer::new(gpu, &layout, &shader::face_source())?;
     let info = LayoutInfo::new(1, renderer.gpu(), &layout, renderer.atlas());
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(Shared {
@@ -101,23 +106,36 @@ pub fn start(gpu: Gpu, layout: Layout) -> anyhow::Result<(Arc<Shared>, thread::J
     });
     let handle = thread::Builder::new().name("render".into()).spawn({
         let shared = Arc::clone(&shared);
-        move || render_loop(renderer, shared, control_rx)
+        move || render_loop(renderer, layout, face, shared, control_rx)
     })?;
     Ok((shared, handle))
 }
 
-fn render_loop(mut renderer: Renderer, shared: Arc<Shared>, control: mpsc::Receiver<Control>) {
+fn render_loop(
+    mut renderer: Renderer,
+    mut layout: Layout,
+    face: Face,
+    shared: Arc<Shared>,
+    control: mpsc::Receiver<Control>,
+) {
     let mut generation = shared.layout.borrow().generation;
-    let mut next = Instant::now();
+    let mut state = FrameState {
+        face_scale: fit_scale(&layout, face.box_mm),
+        ..Default::default()
+    };
+    let started = Instant::now();
+    let mut next = started;
     let mut stats = Stats::new();
     loop {
         loop {
             match control.try_recv() {
-                Ok(Control::SetLayout(layout)) => {
+                Ok(Control::SetLayout(new_layout)) => {
+                    layout = new_layout;
+                    state.face_scale = fit_scale(&layout, face.box_mm);
                     let gpu = renderer.into_gpu();
                     // A failed rebuild leaves nothing to render with; the
                     // sender validated the layout, so this is a GPU fault.
-                    renderer = match Renderer::new(gpu, &layout, TEST_PATTERN_WGSL) {
+                    renderer = match Renderer::new(gpu, &layout, &shader::face_source()) {
                         Ok(r) => r,
                         Err(e) => {
                             tracing::error!("renderer rebuild failed: {e:#}");
@@ -134,13 +152,18 @@ fn render_loop(mut renderer: Renderer, shared: Arc<Shared>, control: mpsc::Recei
                 Err(mpsc::TryRecvError::Disconnected) => return,
             }
         }
+        let now = Instant::now();
+        let t = now.duration_since(started).as_secs_f32();
+        state.dt_s = t - state.time_s;
+        state.time_s = t;
+        state.frame = state.frame.wrapping_add(1);
+        let uniforms = face.pack(&state);
         let mut frame = Frame::default();
-        let started = Instant::now();
-        if let Err(e) = renderer.render(&mut frame) {
+        if let Err(e) = renderer.render(&uniforms, &mut frame) {
             tracing::error!("render failed: {e:#}");
             return;
         }
-        stats.record(started.elapsed());
+        stats.record(now.elapsed());
         shared.frames.send_replace(Arc::new(frame));
         stats.maybe_log(shared.frames.receiver_count());
         next += TICK;
