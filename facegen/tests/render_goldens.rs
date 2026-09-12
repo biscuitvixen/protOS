@@ -244,3 +244,34 @@ fn the_cube_sits_at_each_panel_centre_and_leaves_the_corners_dark() {
         );
     }
 }
+
+#[test]
+fn a_capture_writes_an_animated_png_with_one_frame_per_tick() {
+    use facegen::capture::{Options, capture};
+    let layout = presets::load("two_64x32").unwrap();
+    let mut renderer = Renderer::new(lavapipe(), &layout, &shader::face_source()).unwrap();
+    let out = std::env::temp_dir().join(format!("facegen-capture-{}.png", std::process::id()));
+    let opts = Options {
+        scene: Scene::Face,
+        seconds: 0.5,
+        fps: 10,
+        px_per_mm: 1.0,
+    };
+    capture(&mut renderer, &layout, &Face::default_face(), &opts, &out).expect("capture writes");
+    let mut reader = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&out).unwrap()))
+        .read_info()
+        .expect("capture is a valid png");
+    let control = reader
+        .info()
+        .animation_control
+        .expect("capture is animated");
+    assert_eq!(control.num_frames, 5, "0.5 s at 10 fps is five frames");
+    let (w, h) = (reader.info().width, reader.info().height);
+    assert!(
+        w > 384 && h > 96,
+        "the visor view at 1 px/mm spans the 384 mm visor plus padding: {w}x{h}"
+    );
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    reader.next_frame(&mut buf).expect("first frame decodes");
+    std::fs::remove_file(&out).unwrap();
+}

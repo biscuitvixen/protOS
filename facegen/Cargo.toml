@@ -28,6 +28,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 wgpu.workspace = true
 
+[dev-dependencies]
+png.workspace = true
+
 [features]
 # Drive HUB75 panels through Adafruit Piomatter on a Raspberry Pi 5.
 # Links GPL-2.0-only code; see piomatter-sys.

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>protOS facegen</title>
+<style>
+  body { margin: 0; background: #14161a; color: #d8dbe0; font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 2em 1em; }
+  h1 { font-size: 1.5em; letter-spacing: 0.03em; }
+  h2 { font-size: 1.1em; color: #8a919c; margin-top: 2em; }
+  figure { margin: 1em 0; }
+  figure img { width: 100%; height: auto; background: #0a0b0d; border-radius: 6px; image-rendering: pixelated; }
+  figcaption { color: #8a919c; font-size: 0.9em; }
+  a { color: #7ab8ff; }
+  code { background: #1d2026; padding: 0.1em 0.3em; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>protOS facegen</h1>
+  <p>Procedural face generation for a protogen head. Face blendshapes arrive
+  over OSC, a rig maps them onto signed-distance-field shaders, and the GPU
+  renders every LED panel into one atlas. These captures were rendered by
+  the same binary in CI on Mesa's software Vulkan driver, driven by the
+  built-in fake producer, and drawn as the visor is seen from the front.
+  Source: <a href="https://github.com/biscuitvixen/protOS">github.com/biscuitvixen/protOS</a>.</p>
+
+  <h2>Two 64x32 panels, one per side</h2>
+  <figure><img src="captures/face_two_64x32.png" alt="The default face on two 64x32 panels, talking and blinking">
+  <figcaption>The default face. The right panel is mounted upside down; the layout's per-panel transform handles it.</figcaption></figure>
+  <figure><img src="captures/cube_two_64x32.png" alt="A spinning cube on two panels">
+  <figcaption>The cube scene: each side is a window onto a 3D scene, eye 400 mm in front of the face plane.</figcaption></figure>
+
+  <h2>Six 32x16 panels, three per side</h2>
+  <figure><img src="captures/face_six_panel.png" alt="The same face on six smaller panels">
+  <figcaption>The same face TOML on eye, mouth and nose panels; the panels are windows onto the same face-space.</figcaption></figure>
+  <figure><img src="captures/cube_six_panel.png" alt="The cube across six panels">
+  <figcaption>The cube seen through six windows; it stays continuous across the bezels.</figcaption></figure>
+
+  <h2>Raw atlas</h2>
+  <p>What the LED driver receives: connectors stacked as rows, chains along x, no rotation or mirroring.</p>
+  <figure><img src="captures/face_atlas_open.png" alt="The atlas with the mouth open and a left smile" style="width: 512px; max-width: 100%">
+  <figcaption><code>facegen render --set jawOpen=1 --set mouthSmileLeft=0.7</code></figcaption></figure>
+  <figure><img src="captures/pattern_atlas.png" alt="The bring-up test pattern" style="width: 512px; max-width: 100%">
+  <figcaption>The bring-up pattern: a 10 mm grid with markers that expose mirror and rotation mistakes.</figcaption></figure>
+</main>
+</body>
+</html>

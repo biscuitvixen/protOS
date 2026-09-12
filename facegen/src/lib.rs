@@ -6,12 +6,14 @@
 //! pushed to the panels. Each module is one area of that pipeline.
 
 pub mod app;
+pub mod capture;
 pub mod contract;
 pub mod face;
 pub mod fake;
 pub mod features;
 pub mod layout;
 pub mod osc;
+pub mod preview;
 pub mod render;
 pub mod rig;
 pub mod sinks;

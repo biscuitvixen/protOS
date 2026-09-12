@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Build, lint and test on lavapipe
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # rustup reads rust-toolchain.toml and installs the pinned version.
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Mesa's software Vulkan driver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+      - run: vulkaninfo --summary | grep -E 'deviceName|apiVersion' || true
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --features piomatter -- -D warnings
+      - run: cargo test --workspace --features piomatter

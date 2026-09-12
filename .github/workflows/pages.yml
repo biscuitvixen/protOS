@@ -1,0 +1,52 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Render captures and build the site
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Mesa's software Vulkan driver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
+      - run: cargo build --release -p facegen
+      - name: Render captures on lavapipe
+        run: |
+          set -e
+          mkdir -p _site/captures
+          F=target/release/facegen
+          $F capture --adapter llvmpipe --layout two_64x32 --scene face --seconds 8 --fps 20 --scale 2 --out _site/captures/face_two_64x32.png
+          $F capture --adapter llvmpipe --layout six_panel --scene face --seconds 8 --fps 20 --scale 2 --out _site/captures/face_six_panel.png
+          $F capture --adapter llvmpipe --layout two_64x32 --scene cube --seconds 6 --fps 20 --scale 2 --out _site/captures/cube_two_64x32.png
+          $F capture --adapter llvmpipe --layout six_panel --scene cube --seconds 6 --fps 20 --scale 2 --out _site/captures/cube_six_panel.png
+          $F render --adapter llvmpipe --test-pattern --out _site/captures/pattern_atlas.png
+          $F render --adapter llvmpipe --set jawOpen=1 --set mouthSmileLeft=0.7 --out _site/captures/face_atlas_open.png
+          cp pages/index.html _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

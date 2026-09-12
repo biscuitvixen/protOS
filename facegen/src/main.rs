@@ -75,6 +75,27 @@ enum Command {
         #[arg(long, default_value_t = 30.0)]
         rate: f32,
     },
+    /// Write an animated PNG of the face driven by the fake curves.
+    Capture {
+        /// A preset name or a path to a layout TOML file.
+        #[arg(long, default_value = "two_64x32")]
+        layout: String,
+        /// Scene to draw: face or cube.
+        #[arg(long, default_value = "face")]
+        scene: String,
+        #[arg(long, default_value_t = 6.0)]
+        seconds: f32,
+        #[arg(long, default_value_t = 20)]
+        fps: u32,
+        /// Visor-view scale in pixels per millimetre; 0 writes the raw atlas.
+        #[arg(long, default_value_t = 2.0)]
+        scale: f32,
+        #[arg(long, default_value = "capture.png")]
+        out: PathBuf,
+        /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
+        #[arg(long)]
+        adapter: Option<String>,
+    },
     /// Render one frame of the test pattern to a PNG.
     Render {
         /// A preset name or a path to a layout TOML file.
@@ -134,6 +155,35 @@ fn main() -> anyhow::Result<()> {
             let sender = facegen::osc::Sender::new(to.as_str())?;
             println!("sending fake curves to {to} at {rate} Hz per channel");
             facegen::fake::run(&sender, rate)?;
+            Ok(())
+        }
+        Command::Capture {
+            layout,
+            scene,
+            seconds,
+            fps,
+            scale,
+            out,
+            adapter,
+        } => {
+            let layout = load_layout(&layout)?;
+            let scene = facegen::render::Scene::parse(&scene)
+                .ok_or_else(|| anyhow::anyhow!("no scene named {scene:?}"))?;
+            let gpu = Gpu::new(adapter.as_deref())?;
+            let mut renderer = Renderer::new(gpu, &layout, &shader::face_source())?;
+            let face = Face::default_face();
+            let opts = facegen::capture::Options {
+                scene,
+                seconds,
+                fps,
+                px_per_mm: scale,
+            };
+            facegen::capture::capture(&mut renderer, &layout, &face, &opts, &out)?;
+            println!(
+                "{} frames at {fps} fps -> {}",
+                (seconds * fps as f32).round(),
+                out.display()
+            );
             Ok(())
         }
         Command::Render {
