@@ -51,6 +51,14 @@ enum Command {
         /// UDP address for OSC input; Babble's default output port.
         #[arg(long, default_value = "127.0.0.1:8888")]
         osc: SocketAddr,
+        /// Directory holding shaders/ and faces/ to watch for edits; found
+        /// automatically when run from the workspace, otherwise embedded
+        /// copies are used and nothing reloads.
+        #[arg(long)]
+        assets: Option<PathBuf>,
+        /// Face to load from faces/<name>.toml.
+        #[arg(long, default_value = "default")]
+        face: String,
         /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
         #[arg(long)]
         adapter: Option<String>,
@@ -94,9 +102,15 @@ fn main() -> anyhow::Result<()> {
             layout,
             bind,
             osc,
+            assets,
+            face,
             adapter,
         } => {
-            serve(load_layout(&layout)?, bind, osc, adapter.as_deref())?;
+            let assets = facegen::app::Assets {
+                dir: assets.or_else(facegen::app::Assets::detect),
+                face,
+            };
+            serve(load_layout(&layout)?, bind, osc, assets, adapter.as_deref())?;
             Ok(())
         }
         Command::Fake { to, rate } => {
@@ -151,12 +165,17 @@ fn serve(
     layout: Layout,
     bind: SocketAddr,
     osc: SocketAddr,
+    assets: facegen::app::Assets,
     adapter: Option<&str>,
 ) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     let listener = runtime.block_on(facegen::web::bind(bind))?;
+    match &assets.dir {
+        Some(dir) => println!("assets: {} (edits reload live)", dir.display()),
+        None => println!("assets: embedded (no live reload; pass --assets)"),
+    }
     let gpu = Gpu::new(adapter)?;
-    let (shared, _render_thread) = facegen::app::start(gpu, layout, Face::default_face())?;
+    let (shared, _render_thread) = facegen::app::start(gpu, layout, assets)?;
     let _osc_thread = facegen::osc::start_receiver(osc, std::sync::Arc::clone(&shared.inputs))?;
     let port = listener.local_addr()?.port();
     println!("facegen harness:");

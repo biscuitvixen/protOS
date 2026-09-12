@@ -66,6 +66,13 @@ impl Face {
         toml::from_str(text)
     }
 
+    pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
+        use anyhow::Context;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Self::from_toml(&text).with_context(|| format!("parsing {}", path.display()))
+    }
+
     pub fn default_face() -> Self {
         Self::from_toml(DEFAULT_TOML).expect("embedded default face parses")
     }

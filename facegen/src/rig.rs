@@ -48,6 +48,16 @@ impl Rig {
         })
     }
 
+    /// Swap in a reloaded face: recompile its table and keep the
+    /// smoothing state so the face does not jump.
+    pub fn replace_face(&mut self, face: &Face) -> anyhow::Result<()> {
+        let fresh = Rig::new(face)?;
+        self.rows = fresh.rows;
+        self.voice_gain = fresh.voice_gain;
+        self.sides = fresh.sides;
+        Ok(())
+    }
+
     /// Smooth the raw inputs and rebuild both sides' parameters.
     pub fn update(&mut self, face: &Face, raw: &[f32; INPUT_COUNT], dt: f32) {
         self.weights = *self.smoother.update(raw, dt);

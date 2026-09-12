@@ -15,4 +15,5 @@ pub mod osc;
 pub mod render;
 pub mod rig;
 pub mod sinks;
+pub mod watch;
 pub mod web;

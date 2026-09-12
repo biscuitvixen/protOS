@@ -59,6 +59,13 @@ impl Renderer {
         })
     }
 
+    /// Replace the pass with a newly assembled source. On failure the
+    /// current pipeline keeps rendering.
+    pub fn rebuild_pipeline(&mut self, source: &str) -> anyhow::Result<()> {
+        self.pipeline = PanelPipeline::new(&self.gpu.device, target::FORMAT, source)?;
+        Ok(())
+    }
+
     pub fn atlas(&self) -> &Atlas {
         &self.atlas
     }

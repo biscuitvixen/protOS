@@ -32,6 +32,8 @@
   <h1>facegen</h1>
   <span id="status">connecting</span>
   <span id="error"></span>
+  <span id="notice" style="margin-left:auto;color:#8a919c"></span>
+  <button id="reload" title="re-read shaders and face">reload</button>
 </header>
 <main>
   <canvas id="visor" width="1200" height="600"></canvas>
@@ -225,6 +227,10 @@ function connect() {
       const msg = JSON.parse(ev.data);
       if (msg.type === "layout") applyLayout(msg);
       else if (msg.type === "inputs") buildInputs(msg.inputs);
+      else if (msg.type === "notice") {
+        const el = document.getElementById("notice");
+        el.textContent = msg.message; el.style.color = msg.ok ? "#7ad47a" : "#ff7a7a";
+      }
       else if (msg.type === "error") errorBox.textContent = msg.message;
       return;
     }
@@ -238,6 +244,7 @@ function connect() {
   };
   presetSelect.onchange = () => ws.send(JSON.stringify({ type: "layout", preset: presetSelect.value }));
   sendInput = (name, value) => ws.send(JSON.stringify({ type: "input", name, value }));
+  document.getElementById("reload").onclick = () => ws.send(JSON.stringify({ type: "reload" }));
   document.getElementById("reset").onclick = () => {
     ws.send(JSON.stringify({ type: "reset" }));
     for (const el of inputsBox.querySelectorAll("input[type=range]")) {

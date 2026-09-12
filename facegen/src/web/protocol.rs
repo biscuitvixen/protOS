@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::app::{InputInfo, LayoutInfo};
+use crate::app::{InputInfo, LayoutInfo, Notice};
 use crate::layout::Layout;
 use crate::sinks::Frame;
 
@@ -19,6 +19,7 @@ pub const FRAME_HEADER_BYTES: usize = 8;
 pub enum ServerMessage<'a> {
     Layout(&'a LayoutInfo),
     Inputs { inputs: Vec<InputInfo> },
+    Notice(&'a Notice),
     Error { message: String },
 }
 
@@ -37,6 +38,8 @@ pub enum ClientMessage {
     Input { name: String, value: f32 },
     /// Return every input to its initial value.
     Reset,
+    /// Re-read the shader and face files now.
+    Reload,
 }
 
 pub fn encode_frame(frame: &Frame, generation: u32) -> Vec<u8> {

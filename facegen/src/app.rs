@@ -9,18 +9,20 @@
 //! is published through a second watch channel with a generation
 //! number that every frame carries.
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 use crate::contract::{self, INPUT_COUNT, InputStore};
 use crate::face::{Face, FrameState, fit_scale};
 use crate::layout::atlas::{Atlas, AtlasRect};
 use crate::layout::{Layout, PanelTransform, presets};
 use crate::render::gpu::Gpu;
+use crate::render::shader::{Assembled, FACE_SET};
 use crate::render::{Renderer, shader};
 use crate::rig::Rig;
 use crate::sinks::Frame;
@@ -31,11 +33,64 @@ pub const TICK: Duration = Duration::from_micros(16_667);
 /// How often the render thread logs its frame statistics.
 const STATS_PERIOD: Duration = Duration::from_secs(5);
 
-/// Messages from the harness to the render thread.
+/// Messages from the harness and the file watcher to the render thread.
 #[derive(Debug)]
 pub enum Control {
     /// Replace the layout. Already validated by the sender.
     SetLayout(Layout),
+    /// Re-read the shader files and rebuild the pass.
+    ReloadShaders,
+    /// Re-read the face file and recompile the rig.
+    ReloadFace,
+}
+
+/// Where editable files live. With no directory everything comes from
+/// the copies embedded at build time and nothing reloads.
+#[derive(Clone, Debug, Default)]
+pub struct Assets {
+    pub dir: Option<PathBuf>,
+    pub face: String,
+}
+
+impl Assets {
+    /// The assets directory holds `shaders/` and `faces/`; the crate
+    /// directory is one, checked relative to the working directory so
+    /// `cargo run` from the workspace root finds it.
+    pub fn detect() -> Option<PathBuf> {
+        ["facegen", "."]
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|d| d.join("shaders").is_dir() && d.join("faces").is_dir())
+            .and_then(|d| d.canonicalize().ok())
+    }
+
+    pub fn shaders_dir(&self) -> Option<PathBuf> {
+        self.dir.as_ref().map(|d| d.join("shaders"))
+    }
+
+    pub fn face_path(&self) -> Option<PathBuf> {
+        self.dir
+            .as_ref()
+            .map(|d| d.join("faces").join(format!("{}.toml", self.face)))
+    }
+
+    pub fn load_face(&self) -> anyhow::Result<Face> {
+        match self.face_path() {
+            Some(path) => Face::load(&path),
+            None => Ok(Face::default_face()),
+        }
+    }
+
+    pub fn load_shaders(&self) -> anyhow::Result<Assembled> {
+        Assembled::load(FACE_SET, self.shaders_dir().as_deref())
+    }
+}
+
+/// A one-line report of a reload or a fault, for the page and the log.
+#[derive(Clone, Debug, Serialize)]
+pub struct Notice {
+    pub ok: bool,
+    pub message: String,
 }
 
 /// One panel as the page needs it: where it is in the atlas and how
@@ -111,7 +166,21 @@ pub struct Shared {
     pub inputs: Arc<Mutex<InputStore>>,
     pub frames: watch::Sender<Arc<Frame>>,
     pub layout: watch::Sender<Arc<LayoutInfo>>,
+    pub notices: broadcast::Sender<Arc<Notice>>,
     pub control: Mutex<mpsc::Sender<Control>>,
+}
+
+impl Shared {
+    /// Log a notice and hand it to every connected page.
+    pub fn notify(&self, ok: bool, message: impl Into<String>) {
+        let message = message.into();
+        if ok {
+            tracing::info!("{message}");
+        } else {
+            tracing::warn!("{message}");
+        }
+        let _ = self.notices.send(Arc::new(Notice { ok, message }));
+    }
 }
 
 /// Build the renderer for `layout`, publish its description, and start
@@ -119,9 +188,12 @@ pub struct Shared {
 pub fn start(
     gpu: Gpu,
     layout: Layout,
-    face: Face,
+    assets: Assets,
 ) -> anyhow::Result<(Arc<Shared>, thread::JoinHandle<()>)> {
-    let renderer = Renderer::new(gpu, &layout, &shader::face_source())?;
+    let face = assets.load_face()?;
+    let shaders = assets.load_shaders()?;
+    shaders.validate().map_err(anyhow::Error::msg)?;
+    let renderer = Renderer::new(gpu, &layout, &shaders.source)?;
     let rig = Rig::new(&face)?;
     let info = LayoutInfo::new(1, renderer.gpu(), &layout, renderer.atlas());
     let (control_tx, control_rx) = mpsc::channel();
@@ -129,11 +201,15 @@ pub fn start(
         inputs: Arc::new(Mutex::new(InputStore::new())),
         frames: watch::Sender::new(Arc::new(Frame::default())),
         layout: watch::Sender::new(Arc::new(info)),
-        control: Mutex::new(control_tx),
+        notices: broadcast::channel(16).0,
+        control: Mutex::new(control_tx.clone()),
     });
+    if let Some(dir) = &assets.dir {
+        crate::watch::start(dir.clone(), control_tx)?;
+    }
     let handle = thread::Builder::new().name("render".into()).spawn({
         let shared = Arc::clone(&shared);
-        move || render_loop(renderer, rig, layout, face, shared, control_rx)
+        move || render_loop(renderer, rig, layout, face, assets, shared, control_rx)
     })?;
     Ok((shared, handle))
 }
@@ -142,7 +218,8 @@ fn render_loop(
     mut renderer: Renderer,
     mut rig: Rig,
     mut layout: Layout,
-    face: Face,
+    mut face: Face,
+    assets: Assets,
     shared: Arc<Shared>,
     control: mpsc::Receiver<Control>,
 ) {
@@ -160,10 +237,14 @@ fn render_loop(
                 Ok(Control::SetLayout(new_layout)) => {
                     layout = new_layout;
                     state.face_scale = fit_scale(&layout, face.box_mm);
+                    let source = match assets.load_shaders() {
+                        Ok(a) => a.source,
+                        Err(_) => shader::face_source(),
+                    };
                     let gpu = renderer.into_gpu();
                     // A failed rebuild leaves nothing to render with; the
                     // sender validated the layout, so this is a GPU fault.
-                    renderer = match Renderer::new(gpu, &layout, &shader::face_source()) {
+                    renderer = match Renderer::new(gpu, &layout, &source) {
                         Ok(r) => r,
                         Err(e) => {
                             tracing::error!("renderer rebuild failed: {e:#}");
@@ -176,6 +257,18 @@ fn render_loop(
                     shared.layout.send_replace(Arc::new(info));
                     tracing::info!(generation, layout = %layout.name, "layout changed");
                 }
+                Ok(Control::ReloadShaders) => match reload_shaders(&assets, &mut renderer) {
+                    Ok(()) => shared.notify(true, "shaders reloaded"),
+                    Err(e) => shared.notify(false, format!("shader reload failed: {e:#}")),
+                },
+                Ok(Control::ReloadFace) => match reload_face(&assets, &mut rig) {
+                    Ok(f) => {
+                        face = f;
+                        state.face_scale = fit_scale(&layout, face.box_mm);
+                        shared.notify(true, format!("face {:?} reloaded", face.name));
+                    }
+                    Err(e) => shared.notify(false, format!("face reload failed: {e:#}")),
+                },
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => return,
             }
@@ -204,6 +297,20 @@ fn render_loop(
             next = now;
         }
     }
+}
+
+/// Read, validate and rebuild; the old pipeline survives any failure.
+fn reload_shaders(assets: &Assets, renderer: &mut Renderer) -> anyhow::Result<()> {
+    let assembled = assets.load_shaders()?;
+    assembled.validate().map_err(anyhow::Error::msg)?;
+    renderer.rebuild_pipeline(&assembled.source)
+}
+
+/// Read and recompile; the old face survives any failure.
+fn reload_face(assets: &Assets, rig: &mut Rig) -> anyhow::Result<Face> {
+    let face = assets.load_face()?;
+    rig.replace_face(&face)?;
+    Ok(face)
 }
 
 /// Frame timing, logged every `STATS_PERIOD`.

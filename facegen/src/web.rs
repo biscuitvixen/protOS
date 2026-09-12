@@ -67,6 +67,7 @@ async fn ws_upgrade(
 async fn connection(mut socket: WebSocket, shared: Arc<Shared>) {
     let mut frames = shared.frames.subscribe();
     let mut layouts = shared.layout.subscribe();
+    let mut notices = shared.notices.subscribe();
     // Deliver the current layout before any frame, then mark the frame
     // receiver so the first loop iteration does not resend a stale one.
     let current = layouts.borrow_and_update().clone();
@@ -92,6 +93,14 @@ async fn connection(mut socket: WebSocket, shared: Arc<Shared>) {
                 let info = layouts.borrow_and_update().clone();
                 generation = info.generation;
                 if send_json(&mut socket, &ServerMessage::Layout(&info)).await.is_err() { return; }
+            }
+            notice = notices.recv() => {
+                // Lagged means this client missed old notices; carry on.
+                if let Ok(notice) = notice
+                    && send_json(&mut socket, &ServerMessage::Notice(&notice)).await.is_err()
+                {
+                    return;
+                }
             }
             changed = frames.changed() => {
                 if changed.is_err() { return; }
@@ -189,6 +198,15 @@ fn apply_client_message(message: ClientMessage, shared: &Shared) -> Option<Serve
         ClientMessage::Reset => {
             shared.inputs.lock().expect("input store lock").reset();
             None
+        }
+        ClientMessage::Reload => {
+            let control = shared.control.lock().expect("control channel lock");
+            let sent = control
+                .send(Control::ReloadShaders)
+                .and_then(|_| control.send(Control::ReloadFace));
+            sent.err().map(|_| ServerMessage::Error {
+                message: "render thread has stopped".into(),
+            })
         }
     }
 }
