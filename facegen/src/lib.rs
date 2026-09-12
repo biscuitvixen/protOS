@@ -8,8 +8,10 @@
 pub mod app;
 pub mod contract;
 pub mod face;
+pub mod fake;
 pub mod features;
 pub mod layout;
+pub mod osc;
 pub mod render;
 pub mod rig;
 pub mod sinks;

@@ -40,7 +40,7 @@ enum Command {
         /// A preset name (two_64x32, six_panel) or a path to a layout TOML file.
         layout: String,
     },
-    /// Run the render loop with the browser harness.
+    /// Run the render loop with the OSC receiver and the browser harness.
     Serve {
         /// A preset name or a path to a layout TOML file.
         #[arg(long, default_value = "two_64x32")]
@@ -48,9 +48,21 @@ enum Command {
         /// Address to listen on; 0.0.0.0 makes it reachable over Tailscale.
         #[arg(long, default_value = "0.0.0.0:8080")]
         bind: SocketAddr,
+        /// UDP address for OSC input; Babble's default output port.
+        #[arg(long, default_value = "127.0.0.1:8888")]
+        osc: SocketAddr,
         /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
         #[arg(long)]
         adapter: Option<String>,
+    },
+    /// Send canned blendshape curves over OSC, standing in for a tracker.
+    Fake {
+        /// Destination, normally facegen's OSC address.
+        #[arg(long, default_value = "127.0.0.1:8888")]
+        to: String,
+        /// Messages per channel per second.
+        #[arg(long, default_value_t = 30.0)]
+        rate: f32,
     },
     /// Render one frame of the test pattern to a PNG.
     Render {
@@ -66,6 +78,9 @@ enum Command {
         /// Draw the bring-up test pattern instead of the face.
         #[arg(long)]
         test_pattern: bool,
+        /// Set an input for the frame, e.g. --set jawOpen=1 (repeatable).
+        #[arg(long = "set", value_name = "NAME=VALUE")]
+        inputs: Vec<String>,
     },
 }
 
@@ -78,9 +93,16 @@ fn main() -> anyhow::Result<()> {
         Command::Serve {
             layout,
             bind,
+            osc,
             adapter,
         } => {
-            serve(load_layout(&layout)?, bind, adapter.as_deref())?;
+            serve(load_layout(&layout)?, bind, osc, adapter.as_deref())?;
+            Ok(())
+        }
+        Command::Fake { to, rate } => {
+            let sender = facegen::osc::Sender::new(to.as_str())?;
+            println!("sending fake curves to {to} at {rate} Hz per channel");
+            facegen::fake::run(&sender, rate)?;
             Ok(())
         }
         Command::Render {
@@ -88,12 +110,14 @@ fn main() -> anyhow::Result<()> {
             out,
             adapter,
             test_pattern,
+            inputs,
         } => {
             render_once(
                 &load_layout(&layout)?,
                 &out,
                 adapter.as_deref(),
                 test_pattern,
+                &inputs,
             )?;
             Ok(())
         }
@@ -123,11 +147,17 @@ fn init_logging(verbose: u8) {
         .init();
 }
 
-fn serve(layout: Layout, bind: SocketAddr, adapter: Option<&str>) -> anyhow::Result<()> {
+fn serve(
+    layout: Layout,
+    bind: SocketAddr,
+    osc: SocketAddr,
+    adapter: Option<&str>,
+) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     let listener = runtime.block_on(facegen::web::bind(bind))?;
     let gpu = Gpu::new(adapter)?;
     let (shared, _render_thread) = facegen::app::start(gpu, layout, Face::default_face())?;
+    let _osc_thread = facegen::osc::start_receiver(osc, std::sync::Arc::clone(&shared.inputs))?;
     let port = listener.local_addr()?.port();
     println!("facegen harness:");
     println!("  http://localhost:{port}/");
@@ -147,7 +177,17 @@ fn render_once(
     out: &std::path::Path,
     adapter: Option<&str>,
     test_pattern: bool,
+    inputs: &[String],
 ) -> anyhow::Result<()> {
+    let mut store = InputStore::new();
+    for spec in inputs {
+        let (name, value) = spec
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("--set expects NAME=VALUE, got {spec:?}"))?;
+        let id = facegen::contract::lookup_name(name)
+            .ok_or_else(|| anyhow::anyhow!("unknown input {name:?}"))?;
+        store.set(id, value.parse()?, std::time::Instant::now());
+    }
     let gpu = Gpu::new(adapter)?;
     let source = if test_pattern {
         shader::test_pattern_source()
@@ -157,7 +197,7 @@ fn render_once(
     let mut renderer = Renderer::new(gpu, layout, &source)?;
     let face = Face::default_face();
     let mut rig = Rig::new(&face)?;
-    rig.update(&face, InputStore::new().values(), 0.0);
+    rig.update(&face, store.values(), 0.0);
     let uniforms = rig.pack(
         &face,
         &FrameState {

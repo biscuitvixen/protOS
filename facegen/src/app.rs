@@ -108,7 +108,7 @@ pub fn inputs_info(store: &InputStore) -> Vec<InputInfo> {
 
 /// State shared between the render thread and the web tasks.
 pub struct Shared {
-    pub inputs: Mutex<InputStore>,
+    pub inputs: Arc<Mutex<InputStore>>,
     pub frames: watch::Sender<Arc<Frame>>,
     pub layout: watch::Sender<Arc<LayoutInfo>>,
     pub control: Mutex<mpsc::Sender<Control>>,
@@ -126,7 +126,7 @@ pub fn start(
     let info = LayoutInfo::new(1, renderer.gpu(), &layout, renderer.atlas());
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(Shared {
-        inputs: Mutex::new(InputStore::new()),
+        inputs: Arc::new(Mutex::new(InputStore::new())),
         frames: watch::Sender::new(Arc::new(Frame::default())),
         layout: watch::Sender::new(Arc::new(info)),
         control: Mutex::new(control_tx),

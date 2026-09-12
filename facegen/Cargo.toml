@@ -13,6 +13,7 @@ bytemuck.workspace = true
 bytes.workspace = true
 clap.workspace = true
 png.workspace = true
+rosc.workspace = true
 pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true
