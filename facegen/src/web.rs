@@ -18,7 +18,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use bytes::Bytes;
 
-use crate::app::{Control, Shared};
+use crate::app::{Control, Shared, inputs_info};
 use crate::layout::atlas::Atlas;
 use crate::layout::{Layout, presets};
 use protocol::{ClientMessage, ServerMessage, encode_frame};
@@ -71,6 +71,13 @@ async fn connection(mut socket: WebSocket, shared: Arc<Shared>) {
     // receiver so the first loop iteration does not resend a stale one.
     let current = layouts.borrow_and_update().clone();
     if send_json(&mut socket, &ServerMessage::Layout(&current))
+        .await
+        .is_err()
+    {
+        return;
+    }
+    let inputs = inputs_info(&shared.inputs.lock().expect("input store lock"));
+    if send_json(&mut socket, &ServerMessage::Inputs { inputs })
         .await
         .is_err()
     {
@@ -179,5 +186,9 @@ fn apply_client_message(message: ClientMessage, shared: &Shared) -> Option<Serve
                 message: format!("unknown input {name:?}"),
             }),
         },
+        ClientMessage::Reset => {
+            shared.inputs.lock().expect("input store lock").reset();
+            None
+        }
     }
 }

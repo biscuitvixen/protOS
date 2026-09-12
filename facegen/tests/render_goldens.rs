@@ -8,11 +8,13 @@
 
 use std::path::PathBuf;
 
+use facegen::contract::InputStore;
 use facegen::face::{Face, FrameState, fit_scale};
 use facegen::layout::{Layout, presets};
 use facegen::render::gpu::Gpu;
 use facegen::render::uniforms::FaceUniforms;
 use facegen::render::{Renderer, shader};
+use facegen::rig::Rig;
 use facegen::sinks::Frame;
 use facegen::sinks::png::{read_png_rgb, write_png};
 
@@ -42,10 +44,15 @@ fn render(gpu: Gpu, layout: &Layout, source: &str, uniforms: &FaceUniforms) -> (
 
 fn face_uniforms(layout: &Layout) -> FaceUniforms {
     let face = Face::default_face();
-    face.pack(&FrameState {
-        face_scale: fit_scale(layout, face.box_mm),
-        ..Default::default()
-    })
+    let mut rig = Rig::new(&face).unwrap();
+    rig.update(&face, InputStore::new().values(), 0.0);
+    rig.pack(
+        &face,
+        &FrameState {
+            face_scale: fit_scale(layout, face.box_mm),
+            ..Default::default()
+        },
+    )
 }
 
 fn check_golden(name: &str, frame: &Frame) {

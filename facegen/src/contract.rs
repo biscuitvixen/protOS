@@ -86,6 +86,10 @@ pub struct InputSpec {
     pub side: Side,
     pub range: Range,
     pub source: Source,
+    /// Value before any producer has written the channel. Lids start
+    /// open and pupils mid-size so a missing eye tracker leaves a
+    /// normal face; every blendshape starts at rest.
+    pub initial: f32,
 }
 
 /// Dense index into [`INPUTS`] and [`InputStore`].
@@ -120,13 +124,14 @@ macro_rules! shape {
             side: Side::$side,
             range: Range::Unit,
             source: Source::$source,
+            initial: 0.0,
         }
     };
 }
 
-/// A protOS bus row with an explicit address and range.
+/// A protOS bus row with an explicit address, range and initial value.
 macro_rules! bus {
-    ($name:literal, $address:literal, $feature:ident, $side:ident, $range:ident, $source:ident) => {
+    ($name:literal, $address:literal, $feature:ident, $side:ident, $range:ident, $source:ident, $initial:literal) => {
         InputSpec {
             name: $name,
             address: $address,
@@ -134,6 +139,7 @@ macro_rules! bus {
             side: Side::$side,
             range: Range::$range,
             source: Source::$source,
+            initial: $initial,
         }
     };
 }
@@ -223,7 +229,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Left,
         Signed,
-        ProtosEye
+        ProtosEye,
+        0.0
     ),
     bus!(
         "eyeLeftY",
@@ -231,7 +238,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Left,
         Signed,
-        ProtosEye
+        ProtosEye,
+        0.0
     ),
     bus!(
         "eyeLeftLid",
@@ -239,7 +247,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Left,
         Unit,
-        ProtosEye
+        ProtosEye,
+        1.0
     ),
     bus!(
         "eyeLeftPupil",
@@ -247,7 +256,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Left,
         Unit,
-        ProtosEye
+        ProtosEye,
+        0.5
     ),
     bus!(
         "eyeRightX",
@@ -255,7 +265,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Right,
         Signed,
-        ProtosEye
+        ProtosEye,
+        0.0
     ),
     bus!(
         "eyeRightY",
@@ -263,7 +274,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Right,
         Signed,
-        ProtosEye
+        ProtosEye,
+        0.0
     ),
     bus!(
         "eyeRightLid",
@@ -271,7 +283,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Right,
         Unit,
-        ProtosEye
+        ProtosEye,
+        1.0
     ),
     bus!(
         "eyeRightPupil",
@@ -279,7 +292,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Eye,
         Right,
         Unit,
-        ProtosEye
+        ProtosEye,
+        0.5
     ),
     bus!(
         "voiceLevel",
@@ -287,7 +301,8 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         Voice,
         Both,
         Unit,
-        ProtosVoice
+        ProtosVoice,
+        0.0
     ),
 ];
 
@@ -345,10 +360,19 @@ impl Default for InputStore {
 
 impl InputStore {
     pub fn new() -> Self {
+        let mut values = [0.0; INPUT_COUNT];
+        for (v, spec) in values.iter_mut().zip(INPUTS.iter()) {
+            *v = spec.initial;
+        }
         Self {
-            values: [0.0; INPUT_COUNT],
+            values,
             last_seen: [None; INPUT_COUNT],
         }
+    }
+
+    /// Reset every channel to its initial value.
+    pub fn reset(&mut self) {
+        *self = Self::new();
     }
 
     /// Store a value, clamped to the input's range. `now` is injected so
@@ -636,6 +660,26 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_store_has_open_lids_and_mid_pupils_and_resting_shapes() {
+        let store = InputStore::new();
+        assert_eq!(
+            store.get(lookup_name("eyeLeftLid").unwrap()),
+            1.0,
+            "lid starts open"
+        );
+        assert_eq!(
+            store.get(lookup_name("eyeRightPupil").unwrap()),
+            0.5,
+            "pupil starts mid-size"
+        );
+        assert_eq!(
+            store.get(lookup_name("jawOpen").unwrap()),
+            0.0,
+            "jaw starts closed"
+        );
+    }
+
+    #[test]
     fn setting_by_address_rejects_unknown_addresses_without_touching_the_store() {
         let mut store = InputStore::new();
         let now = Instant::now();
@@ -647,10 +691,15 @@ mod tests {
             !store.set_by_address("/nope", 0.5, now),
             "unknown address accepted"
         );
+        let changed = store
+            .values()
+            .iter()
+            .zip(INPUTS.iter())
+            .filter(|(v, s)| **v != s.initial)
+            .count();
         assert_eq!(
-            store.values().iter().filter(|v| **v != 0.0).count(),
-            1,
-            "only jawOpen should be set"
+            changed, 1,
+            "only jawOpen should have moved from its initial value"
         );
     }
 }

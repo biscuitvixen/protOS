@@ -13,7 +13,8 @@ use crate::features::eye::EyeParams;
 use crate::features::mouth::MouthParams;
 use crate::features::nose::NoseParams;
 use crate::layout::Layout;
-use crate::render::uniforms::{FaceUniforms, GlobalsUniform, SideUniform};
+use crate::render::uniforms::{FaceUniforms, GlobalsUniform};
+use crate::rig::mapping::Morph;
 
 pub const DEFAULT_TOML: &str = include_str!("../faces/default.toml");
 
@@ -34,9 +35,20 @@ pub struct Face {
     pub background: Colour,
     pub close_mode: CloseMode,
     pub brightness: f32,
+    /// Multiplier on the voice level before it competes with jawOpen
+    /// for the mouth opening.
+    #[serde(default = "default_voice_gain")]
+    pub voice_gain: f32,
     pub eye: EyeParams,
     pub mouth: MouthParams,
     pub nose: NoseParams,
+    /// The gain table; see `rig::mapping`.
+    #[serde(default, rename = "morph")]
+    pub morphs: Vec<Morph>,
+}
+
+fn default_voice_gain() -> f32 {
+    1.0
 }
 
 /// Per-frame values that are not part of the authored face.
@@ -58,13 +70,8 @@ impl Face {
         Self::from_toml(DEFAULT_TOML).expect("embedded default face parses")
     }
 
-    pub fn pack(&self, state: &FrameState) -> FaceUniforms {
-        let side = SideUniform {
-            eye: self.eye.pack(),
-            mouth: self.mouth.pack(),
-            nose: self.nose.pack(),
-            cheek: Default::default(),
-        };
+    /// The globals half of the uniform block; the rig fills the sides.
+    pub fn globals(&self, state: &FrameState) -> FaceUniforms {
         FaceUniforms {
             g: GlobalsUniform {
                 time: [state.time_s, state.dt_s, state.frame as f32, 0.0],
@@ -82,7 +89,7 @@ impl Face {
                 atlas: [0.0; 4],
                 bands: [[0.0; 4]; 8],
             },
-            sides: [side, side],
+            sides: Default::default(),
         }
     }
 }
@@ -111,24 +118,19 @@ mod tests {
     use crate::layout::presets;
 
     #[test]
-    fn the_default_face_parses_and_packs_both_sides_identically() {
+    fn the_default_face_parses_with_its_morph_table_and_globals() {
         let face = Face::default_face();
         assert_eq!(face.name, "default", "name");
-        let u = face.pack(&FrameState {
+        assert!(
+            face.morphs.len() > 20,
+            "the default face should ship a gain table"
+        );
+        let u = face.globals(&FrameState {
             face_scale: 1.0,
             ..Default::default()
         });
-        assert_eq!(u.sides[0], u.sides[1], "sides differ before any rig runs");
-        assert_eq!(
-            u.sides[0].eye.c_r,
-            [122.0, 16.0, 30.0, 15.0],
-            "eye geometry lane"
-        );
         assert_eq!(u.g.face[1], 0.0, "squash close mode packs as 0");
-        assert!(
-            (u.sides[0].eye.colour[2] - 1.0).abs() < 1e-6,
-            "eye blue channel is full"
-        );
+        assert_eq!(u.g.motion[3], face.brightness, "brightness lane");
     }
 
     #[test]

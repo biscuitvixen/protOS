@@ -7,6 +7,7 @@ box_mm = [192.0, 96.0]
 background = "#000000"
 close_mode = "squash"
 brightness = 1.0
+voice_gain = 1.0
 
 [eye]
 centre_mm = [122.0, 16.0]
@@ -44,3 +45,320 @@ rotation_deg = 22.0
 bend = 0.2
 nostril_lift_mm = 0.0
 colour = "#00d0ff"
+
+# Gain table: value += gain * (weight + offset) on the target, for the
+# side(s) the shape name implies unless `side` says otherwise. Units are
+# the target's (mm for positions, weights for open/close). Left/Right
+# in mouthLeft, jawLeft and friends is a direction, so those rows carry
+# explicit sides with opposite signs.
+
+[[morph]]
+shape = "jawOpen"
+target = "mouth.open"
+gain = 1.0
+
+[[morph]]
+shape = "mouthClose"
+target = "mouth.open"
+gain = -0.8
+
+[[morph]]
+shape = "mouthFunnel"
+target = "mouth.open"
+gain = 0.4
+
+[[morph]]
+shape = "mouthFunnel"
+target = "mouth.width"
+gain = -45.0
+
+[[morph]]
+shape = "mouthFunnel"
+target = "mouth.thickness"
+gain = 0.7
+
+[[morph]]
+shape = "mouthPucker"
+target = "mouth.width"
+gain = -75.0
+
+[[morph]]
+shape = "mouthPucker"
+target = "mouth.thickness"
+gain = 1.0
+
+[[morph]]
+shape = "mouthSmileLeft"
+target = "mouth.corner_dy"
+gain = 12.0
+
+[[morph]]
+shape = "mouthSmileRight"
+target = "mouth.corner_dy"
+gain = 12.0
+
+[[morph]]
+shape = "mouthSmileLeft"
+target = "eye.lower_close"
+gain = 0.15
+
+[[morph]]
+shape = "mouthSmileRight"
+target = "eye.lower_close"
+gain = 0.15
+
+[[morph]]
+shape = "mouthFrownLeft"
+target = "mouth.corner_dy"
+gain = -12.0
+
+[[morph]]
+shape = "mouthFrownRight"
+target = "mouth.corner_dy"
+gain = -12.0
+
+[[morph]]
+shape = "mouthDimpleLeft"
+target = "mouth.width"
+gain = 22.0
+
+[[morph]]
+shape = "mouthDimpleRight"
+target = "mouth.width"
+gain = 22.0
+
+[[morph]]
+shape = "mouthStretchLeft"
+target = "mouth.width"
+gain = 60.0
+
+[[morph]]
+shape = "mouthStretchRight"
+target = "mouth.width"
+gain = 60.0
+
+[[morph]]
+shape = "mouthPressLeft"
+target = "mouth.thickness"
+gain = -1.0
+
+[[morph]]
+shape = "mouthPressRight"
+target = "mouth.thickness"
+gain = -1.0
+
+[[morph]]
+shape = "mouthUpperUpLeft"
+target = "mouth.upper_lip_dy"
+gain = 1.4
+
+[[morph]]
+shape = "mouthUpperUpRight"
+target = "mouth.upper_lip_dy"
+gain = 1.4
+
+[[morph]]
+shape = "mouthLowerDownLeft"
+target = "mouth.lower_lip_dy"
+gain = -1.4
+
+[[morph]]
+shape = "mouthLowerDownRight"
+target = "mouth.lower_lip_dy"
+gain = -1.4
+
+[[morph]]
+shape = "mouthRollUpper"
+target = "mouth.thickness"
+gain = -0.8
+
+[[morph]]
+shape = "mouthRollLower"
+target = "mouth.thickness"
+gain = -0.8
+
+[[morph]]
+shape = "mouthShrugUpper"
+target = "mouth.upper_lip_dy"
+gain = 0.7
+
+[[morph]]
+shape = "mouthShrugLower"
+target = "mouth.lower_lip_dy"
+gain = 1.0
+
+# Lips toward the wearer's right: outward on the right rig, inward on
+# the left.
+[[morph]]
+shape = "mouthRight"
+target = "mouth.inner_x"
+gain = 8.0
+side = "right"
+
+[[morph]]
+shape = "mouthRight"
+target = "mouth.inner_x"
+gain = -8.0
+side = "left"
+
+[[morph]]
+shape = "mouthLeft"
+target = "mouth.inner_x"
+gain = -8.0
+side = "right"
+
+[[morph]]
+shape = "mouthLeft"
+target = "mouth.inner_x"
+gain = 8.0
+side = "left"
+
+[[morph]]
+shape = "jawRight"
+target = "mouth.lower_dx"
+gain = 12.0
+side = "right"
+
+[[morph]]
+shape = "jawRight"
+target = "mouth.lower_dx"
+gain = -12.0
+side = "left"
+
+[[morph]]
+shape = "jawLeft"
+target = "mouth.lower_dx"
+gain = -12.0
+side = "right"
+
+[[morph]]
+shape = "jawLeft"
+target = "mouth.lower_dx"
+gain = 12.0
+side = "left"
+
+[[morph]]
+shape = "noseSneerLeft"
+target = "nose.lift"
+gain = 4.0
+
+[[morph]]
+shape = "noseSneerRight"
+target = "nose.lift"
+gain = 4.0
+
+[[morph]]
+shape = "noseSneerLeft"
+target = "mouth.upper_lip_dy"
+gain = 0.5
+
+[[morph]]
+shape = "noseSneerRight"
+target = "mouth.upper_lip_dy"
+gain = 0.5
+
+# Eyes: ARKit shapes from a face tracker, or the protOS eye channels.
+[[morph]]
+shape = "eyeBlinkLeft"
+target = "eye.open"
+gain = -1.0
+
+[[morph]]
+shape = "eyeBlinkRight"
+target = "eye.open"
+gain = -1.0
+
+[[morph]]
+shape = "eyeSquintLeft"
+target = "eye.lower_close"
+gain = 0.6
+
+[[morph]]
+shape = "eyeSquintRight"
+target = "eye.lower_close"
+gain = 0.6
+
+[[morph]]
+shape = "eyeWideLeft"
+target = "eye.widen"
+gain = 0.3
+
+[[morph]]
+shape = "eyeWideRight"
+target = "eye.widen"
+gain = 0.3
+
+[[morph]]
+shape = "eyeLookUpLeft"
+target = "eye.gaze_y"
+gain = 4.0
+
+[[morph]]
+shape = "eyeLookUpRight"
+target = "eye.gaze_y"
+gain = 4.0
+
+[[morph]]
+shape = "eyeLookDownLeft"
+target = "eye.gaze_y"
+gain = -4.0
+
+[[morph]]
+shape = "eyeLookDownRight"
+target = "eye.gaze_y"
+gain = -4.0
+
+[[morph]]
+shape = "eyeLookOutLeft"
+target = "eye.gaze_x"
+gain = 5.0
+
+[[morph]]
+shape = "eyeLookOutRight"
+target = "eye.gaze_x"
+gain = 5.0
+
+[[morph]]
+shape = "eyeLookInLeft"
+target = "eye.gaze_x"
+gain = -5.0
+
+[[morph]]
+shape = "eyeLookInRight"
+target = "eye.gaze_x"
+gain = -5.0
+
+# Lid openness sets the eye directly: 1 + 1.0 * (lid - 1) = lid.
+[[morph]]
+shape = "eyeLeftLid"
+target = "eye.open"
+gain = 1.0
+offset = -1.0
+
+[[morph]]
+shape = "eyeRightLid"
+target = "eye.open"
+gain = 1.0
+offset = -1.0
+
+# Bus gaze x is the wearer's right: outward on the right rig, inward
+# on the left. y is up on both.
+[[morph]]
+shape = "eyeLeftX"
+target = "eye.gaze_x"
+gain = -5.0
+
+[[morph]]
+shape = "eyeRightX"
+target = "eye.gaze_x"
+gain = 5.0
+
+[[morph]]
+shape = "eyeLeftY"
+target = "eye.gaze_y"
+gain = 4.0
+
+[[morph]]
+shape = "eyeRightY"
+target = "eye.gaze_y"
+gain = 4.0

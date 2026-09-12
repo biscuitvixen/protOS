@@ -20,6 +20,11 @@
   input.short { width: 4.5em; }
   button { background: #2b6cb0; color: white; border: 0; border-radius: 4px; padding: 0.4em 0.9em; cursor: pointer; }
   label.inline { display: inline-flex; gap: 0.4em; align-items: center; margin-right: 1em; }
+  #inputs details { margin: 0.2em 0; }
+  #inputs summary { cursor: pointer; color: #8a919c; }
+  #inputs .row { display: grid; grid-template-columns: 11em 1fr 3em; gap: 0.4em; align-items: center; font-size: 12px; }
+  #inputs input[type=range] { width: 100%; }
+  aside { max-height: calc(100vh - 6em); overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -40,6 +45,10 @@
       </div>
     </fieldset>
     <fieldset>
+      <legend>inputs <button id="reset" style="float:right">reset</button></legend>
+      <div id="inputs"></div>
+    </fieldset>
+    <fieldset>
       <legend>panels (mm, px)</legend>
       <table id="panels"><thead><tr><th>name</th><th>side</th><th>w</th><th>h</th><th>pitch</th><th>cx</th><th>cy</th><th>rot</th><th>con</th><th>chain</th></tr></thead><tbody></tbody></table>
       <div style="margin-top:0.5em"><button id="apply">apply</button></div>
@@ -55,6 +64,8 @@ const ctx = visor.getContext("2d", { alpha: false });
 const presetSelect = document.getElementById("preset");
 const panelsBody = document.querySelector("#panels tbody");
 const maskToggle = document.getElementById("mask");
+const inputsBox = document.getElementById("inputs");
+let sendInput = () => {};
 const gammaToggle = document.getElementById("gamma");
 
 let info = null;          // last layout message
@@ -145,6 +156,32 @@ function applyLayout(msg) {
   status.textContent = `${msg.gpu} | ${msg.layout.name} | atlas ${msg.atlas_width}x${msg.atlas_height} | gen ${msg.generation}`;
 }
 
+// One slider per input, grouped by feature; changes go out at most
+// once per animation frame per input.
+function buildInputs(inputs) {
+  const groups = new Map();
+  for (const i of inputs) {
+    if (!groups.has(i.feature)) groups.set(i.feature, []);
+    groups.get(i.feature).push(i);
+  }
+  inputsBox.innerHTML = [...groups].map(([feature, list]) => `<details ${feature === "Jaw" || feature === "Mouth" ? "open" : ""}>
+    <summary>${feature} (${list.length})</summary>
+    ${list.map(i => `<div class="row"><label title="${i.name}">${i.name}</label>
+      <input type="range" name="${i.name}" min="${i.signed ? -1 : 0}" max="1" step="0.01" value="${i.value}">
+      <output>${Number(i.value).toFixed(2)}</output></div>`).join("")}
+  </details>`).join("");
+  const pending = new Map();
+  let scheduled = false;
+  const flush = () => { scheduled = false; for (const [name, value] of pending) sendInput(name, value); pending.clear(); };
+  inputsBox.oninput = (ev) => {
+    const el = ev.target;
+    if (el.type !== "range") return;
+    el.nextElementSibling.value = Number(el.value).toFixed(2);
+    pending.set(el.name, Number(el.value));
+    if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
+  };
+}
+
 function draw() {
   requestAnimationFrame(draw);
   if (!info || !latest) return;
@@ -187,6 +224,7 @@ function connect() {
     if (typeof ev.data === "string") {
       const msg = JSON.parse(ev.data);
       if (msg.type === "layout") applyLayout(msg);
+      else if (msg.type === "inputs") buildInputs(msg.inputs);
       else if (msg.type === "error") errorBox.textContent = msg.message;
       return;
     }
@@ -199,6 +237,14 @@ function connect() {
     if (now - lastFpsTime > 1000) { fps = frameCount * 1000 / (now - lastFpsTime); frameCount = 0; lastFpsTime = now; }
   };
   presetSelect.onchange = () => ws.send(JSON.stringify({ type: "layout", preset: presetSelect.value }));
+  sendInput = (name, value) => ws.send(JSON.stringify({ type: "input", name, value }));
+  document.getElementById("reset").onclick = () => {
+    ws.send(JSON.stringify({ type: "reset" }));
+    for (const el of inputsBox.querySelectorAll("input[type=range]")) {
+      const initial = el.name.endsWith("Lid") ? 1 : el.name.endsWith("Pupil") ? 0.5 : 0;
+      el.value = initial; el.nextElementSibling.value = initial.toFixed(2);
+    }
+  };
   document.getElementById("apply").onclick = () => {
     const rows = [...panelsBody.querySelectorAll("tr")];
     const field = (row, name) => row.querySelector(`[name=${name}]`).value;

@@ -16,12 +16,13 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tokio::sync::watch;
 
-use crate::contract::InputStore;
+use crate::contract::{self, INPUT_COUNT, InputStore};
 use crate::face::{Face, FrameState, fit_scale};
 use crate::layout::atlas::{Atlas, AtlasRect};
 use crate::layout::{Layout, PanelTransform, presets};
 use crate::render::gpu::Gpu;
 use crate::render::{Renderer, shader};
+use crate::rig::Rig;
 use crate::sinks::Frame;
 
 /// Render period; the LED refresh is independent of this.
@@ -80,6 +81,31 @@ impl LayoutInfo {
     }
 }
 
+/// The input vocabulary as the page renders its sliders.
+#[derive(Clone, Debug, Serialize)]
+pub struct InputInfo {
+    pub name: &'static str,
+    pub feature: String,
+    pub side: String,
+    pub signed: bool,
+    pub value: f32,
+}
+
+pub fn inputs_info(store: &InputStore) -> Vec<InputInfo> {
+    contract::all_ids()
+        .map(|id| {
+            let s = id.spec();
+            InputInfo {
+                name: s.name,
+                feature: format!("{:?}", s.feature),
+                side: format!("{:?}", s.side),
+                signed: s.range == contract::Range::Signed,
+                value: store.get(id),
+            }
+        })
+        .collect()
+}
+
 /// State shared between the render thread and the web tasks.
 pub struct Shared {
     pub inputs: Mutex<InputStore>,
@@ -96,6 +122,7 @@ pub fn start(
     face: Face,
 ) -> anyhow::Result<(Arc<Shared>, thread::JoinHandle<()>)> {
     let renderer = Renderer::new(gpu, &layout, &shader::face_source())?;
+    let rig = Rig::new(&face)?;
     let info = LayoutInfo::new(1, renderer.gpu(), &layout, renderer.atlas());
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(Shared {
@@ -106,13 +133,14 @@ pub fn start(
     });
     let handle = thread::Builder::new().name("render".into()).spawn({
         let shared = Arc::clone(&shared);
-        move || render_loop(renderer, layout, face, shared, control_rx)
+        move || render_loop(renderer, rig, layout, face, shared, control_rx)
     })?;
     Ok((shared, handle))
 }
 
 fn render_loop(
     mut renderer: Renderer,
+    mut rig: Rig,
     mut layout: Layout,
     face: Face,
     shared: Arc<Shared>,
@@ -157,7 +185,9 @@ fn render_loop(
         state.dt_s = t - state.time_s;
         state.time_s = t;
         state.frame = state.frame.wrapping_add(1);
-        let uniforms = face.pack(&state);
+        let raw: [f32; INPUT_COUNT] = *shared.inputs.lock().expect("input store lock").values();
+        rig.update(&face, &raw, state.dt_s);
+        let uniforms = rig.pack(&face, &state);
         let mut frame = Frame::default();
         if let Err(e) = renderer.render(&uniforms, &mut frame) {
             tracing::error!("render failed: {e:#}");

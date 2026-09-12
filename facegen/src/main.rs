@@ -5,11 +5,13 @@ use std::io::{self, BufWriter, Write};
 
 use clap::{Parser, Subcommand};
 use facegen::contract;
+use facegen::contract::InputStore;
 use facegen::face::{Face, FrameState, fit_scale};
 use facegen::layout::atlas::Atlas;
 use facegen::layout::{Layout, presets};
 use facegen::render::gpu::Gpu;
 use facegen::render::{Renderer, shader};
+use facegen::rig::Rig;
 use facegen::sinks::Frame;
 use facegen::sinks::png::write_png;
 use std::net::SocketAddr;
@@ -154,10 +156,15 @@ fn render_once(
     };
     let mut renderer = Renderer::new(gpu, layout, &source)?;
     let face = Face::default_face();
-    let uniforms = face.pack(&FrameState {
-        face_scale: fit_scale(layout, face.box_mm),
-        ..Default::default()
-    });
+    let mut rig = Rig::new(&face)?;
+    rig.update(&face, InputStore::new().values(), 0.0);
+    let uniforms = rig.pack(
+        &face,
+        &FrameState {
+            face_scale: fit_scale(layout, face.box_mm),
+            ..Default::default()
+        },
+    );
     let mut frame = Frame::default();
     renderer.render(&uniforms, &mut frame)?;
     write_png(out, &frame)?;

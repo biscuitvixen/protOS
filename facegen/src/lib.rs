@@ -11,5 +11,6 @@ pub mod face;
 pub mod features;
 pub mod layout;
 pub mod render;
+pub mod rig;
 pub mod sinks;
 pub mod web;

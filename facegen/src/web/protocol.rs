@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::app::LayoutInfo;
+use crate::app::{InputInfo, LayoutInfo};
 use crate::layout::Layout;
 use crate::sinks::Frame;
 
@@ -18,6 +18,7 @@ pub const FRAME_HEADER_BYTES: usize = 8;
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ServerMessage<'a> {
     Layout(&'a LayoutInfo),
+    Inputs { inputs: Vec<InputInfo> },
     Error { message: String },
 }
 
@@ -34,6 +35,8 @@ pub enum ClientMessage {
     },
     /// Set one named input, as a slider would.
     Input { name: String, value: f32 },
+    /// Return every input to its initial value.
+    Reset,
 }
 
 pub fn encode_frame(frame: &Frame, generation: u32) -> Vec<u8> {
