@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Shader libraries are source, not build output.
+!facegen/shaders/lib/
 parts/
 sdist/
 var/
