@@ -36,6 +36,9 @@ max_open_mm = 22.0
 lower_dx_mm = 0.0
 upper_lip_dy_mm = 0.0
 lower_lip_dy_mm = 0.0
+tooth_height_mm = 4.5
+tooth_width_mm = 12.0
+open_taper = 0.75
 colour = "#00d0ff"
 
 [nose]

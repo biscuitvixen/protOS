@@ -1,6 +1,6 @@
-//! Mouth parameters: a band from the inner point outward with a lifted
-//! corner, split into lips by an opening. See
-//! `shaders/features/mouth.wgsl`.
+//! Mouth parameters: the filled region between two lip curves from the
+//! inner point outward, with a lifted corner, a tapered opening and a
+//! toothed lower edge. See `shaders/features/mouth.wgsl`.
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +24,22 @@ pub struct MouthParams {
     pub lower_dx_mm: f32,
     pub upper_lip_dy_mm: f32,
     pub lower_lip_dy_mm: f32,
+    /// Depth of the triangle-wave teeth on the lower lip; 0 for a
+    /// smooth edge.
+    #[serde(default)]
+    pub tooth_height_mm: f32,
+    /// Period of the tooth pattern.
+    #[serde(default = "default_tooth_width")]
+    pub tooth_width_mm: f32,
+    /// How much the opening narrows toward the corner: 0 keeps the gap
+    /// even, 1 closes it fully at the corner (a triangle).
+    #[serde(default)]
+    pub open_taper: f32,
     pub colour: Colour,
+}
+
+fn default_tooth_width() -> f32 {
+    10.0
 }
 
 impl MouthParams {
@@ -43,7 +58,12 @@ impl MouthParams {
                 self.lower_dx_mm,
             ],
             lips: [self.upper_lip_dy_mm, self.lower_lip_dy_mm, 1.0, 1.0],
-            teeth: [0.0; 4],
+            teeth: [
+                self.tooth_height_mm,
+                self.tooth_width_mm,
+                self.open_taper.clamp(0.0, 1.0),
+                0.0,
+            ],
             tongue: [0.0; 4],
             colour: self.colour.to_array(1.0),
         }
