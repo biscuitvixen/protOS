@@ -3,7 +3,8 @@
 //! The Piomatter headers define non-inline functions, so exactly one
 //! translation unit may include them: the shim. piolib registers its
 //! chip driver through a linker section that nothing references by
-//! symbol, so its archive is linked whole so the section survives.
+//! symbol, so its archive is linked whole and the entry is compiled
+//! through a wrapper that marks the section retained (see csrc).
 
 fn main() {
     let vendor = std::path::Path::new("vendor");
@@ -22,7 +23,8 @@ fn main() {
     cc::Build::new()
         .std("c11")
         .file(vendor.join("piolib/piolib.c"))
-        .file(vendor.join("piolib/pio_rp1.c"))
+        .file("csrc/pio_rp1_retained.c")
+        .include(vendor.join("piolib"))
         .include(vendor.join("piolib/include"))
         .define("_GNU_SOURCE", None)
         .warnings(false)
