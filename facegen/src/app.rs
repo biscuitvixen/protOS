@@ -19,11 +19,11 @@ use tokio::sync::{broadcast, watch};
 
 use crate::contract::{self, INPUT_COUNT, InputStore};
 use crate::face::{Face, FrameState, fit_scale};
-use crate::layout::atlas::{Atlas, AtlasRect};
+use crate::layout::atlas::AtlasRect;
 use crate::layout::{Layout, PanelTransform, presets};
 use crate::render::gpu::Gpu;
 use crate::render::shader::{Assembled, FACE_SET};
-use crate::render::{Renderer, shader};
+use crate::render::{Renderer, Scene, shader};
 use crate::rig::Rig;
 use crate::sinks::Frame;
 
@@ -42,6 +42,8 @@ pub enum Control {
     ReloadShaders,
     /// Re-read the face file and recompile the rig.
     ReloadFace,
+    /// Show a different scene.
+    SetScene(Scene),
 }
 
 /// Where editable files live. With no directory everything comes from
@@ -110,18 +112,23 @@ pub struct LayoutInfo {
     pub presets: Vec<&'static str>,
     pub atlas_width: u32,
     pub atlas_height: u32,
+    pub scenes: Vec<&'static str>,
+    pub scene: &'static str,
     pub layout: Layout,
     pub panels: Vec<PanelInfo>,
 }
 
 impl LayoutInfo {
-    pub fn new(generation: u32, gpu: &Gpu, layout: &Layout, atlas: &Atlas) -> Self {
+    pub fn new(generation: u32, renderer: &Renderer, layout: &Layout) -> Self {
+        let atlas = renderer.atlas();
         Self {
             generation,
-            gpu: gpu.info.name.clone(),
+            gpu: renderer.gpu().info.name.clone(),
             presets: presets::NAMES.to_vec(),
             atlas_width: atlas.width,
             atlas_height: atlas.height,
+            scenes: Scene::NAMES.to_vec(),
+            scene: renderer.scene().name(),
             layout: layout.clone(),
             panels: layout
                 .panels
@@ -195,7 +202,7 @@ pub fn start(
     shaders.validate().map_err(anyhow::Error::msg)?;
     let renderer = Renderer::new(gpu, &layout, &shaders.source)?;
     let rig = Rig::new(&face)?;
-    let info = LayoutInfo::new(1, renderer.gpu(), &layout, renderer.atlas());
+    let info = LayoutInfo::new(1, &renderer, &layout);
     let (control_tx, control_rx) = mpsc::channel();
     let shared = Arc::new(Shared {
         inputs: Arc::new(Mutex::new(InputStore::new())),
@@ -252,8 +259,7 @@ fn render_loop(
                         }
                     };
                     generation += 1;
-                    let info =
-                        LayoutInfo::new(generation, renderer.gpu(), &layout, renderer.atlas());
+                    let info = LayoutInfo::new(generation, &renderer, &layout);
                     shared.layout.send_replace(Arc::new(info));
                     tracing::info!(generation, layout = %layout.name, "layout changed");
                 }
@@ -261,6 +267,12 @@ fn render_loop(
                     Ok(()) => shared.notify(true, "shaders reloaded"),
                     Err(e) => shared.notify(false, format!("shader reload failed: {e:#}")),
                 },
+                Ok(Control::SetScene(scene)) => {
+                    renderer.set_scene(scene);
+                    let info = LayoutInfo::new(generation, &renderer, &layout);
+                    shared.layout.send_replace(Arc::new(info));
+                    tracing::info!(scene = scene.name(), "scene changed");
+                }
                 Ok(Control::ReloadFace) => match reload_face(&assets, &mut rig) {
                     Ok(f) => {
                         face = f;

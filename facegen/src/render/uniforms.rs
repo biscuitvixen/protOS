@@ -87,3 +87,52 @@ const _: () = {
 impl FaceUniforms {
     pub const SIZE: u64 = std::mem::size_of::<FaceUniforms>() as u64;
 }
+
+/// The uniform buffer and its bind group, bound at group 0 by every
+/// pass so the face parameters, time and brightness are shared.
+pub struct UniformBinding {
+    pub buffer: wgpu::Buffer,
+    pub layout: wgpu::BindGroupLayout,
+    pub bind_group: wgpu::BindGroup,
+}
+
+impl UniformBinding {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("face uniforms"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("face uniforms"),
+            size: FaceUniforms::SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("face uniforms"),
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        Self {
+            buffer,
+            layout,
+            bind_group,
+        }
+    }
+
+    pub fn write(&self, queue: &wgpu::Queue, uniforms: &FaceUniforms) {
+        queue.write_buffer(&self.buffer, 0, bytemuck::bytes_of(uniforms));
+    }
+}

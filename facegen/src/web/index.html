@@ -41,6 +41,7 @@
     <fieldset>
       <legend>layout</legend>
       <label>preset <select id="preset"></select></label>
+      <label style="margin-left:1em">scene <select id="scene"></select></label>
       <div style="margin-top:0.5em">
         <label class="inline"><input type="checkbox" id="mask" checked> LED mask</label>
         <label class="inline"><input type="checkbox" id="gamma" checked> panel gamma</label>
@@ -64,6 +65,7 @@ const errorBox = document.getElementById("error");
 const visor = document.getElementById("visor");
 const ctx = visor.getContext("2d", { alpha: false });
 const presetSelect = document.getElementById("preset");
+const sceneSelect = document.getElementById("scene");
 const panelsBody = document.querySelector("#panels tbody");
 const maskToggle = document.getElementById("mask");
 const inputsBox = document.getElementById("inputs");
@@ -143,6 +145,8 @@ function applyLayout(msg) {
   }
   presetSelect.innerHTML = msg.presets.map(n => `<option value="${n}">${n}</option>`).join("");
   presetSelect.value = msg.layout.name;
+  sceneSelect.innerHTML = msg.scenes.map(n => `<option value="${n}">${n}</option>`).join("");
+  sceneSelect.value = msg.scene;
   panelsBody.innerHTML = msg.layout.panel.map((p, i) => `<tr data-i="${i}">
     <td><input type="text" name="name" value="${p.name}"></td>
     <td><select name="side"><option ${p.side === "left" ? "selected" : ""}>left</option><option ${p.side === "right" ? "selected" : ""}>right</option></select></td>
@@ -244,6 +248,7 @@ function connect() {
   };
   presetSelect.onchange = () => ws.send(JSON.stringify({ type: "layout", preset: presetSelect.value }));
   sendInput = (name, value) => ws.send(JSON.stringify({ type: "input", name, value }));
+  sceneSelect.onchange = () => ws.send(JSON.stringify({ type: "scene", name: sceneSelect.value }));
   document.getElementById("reload").onclick = () => ws.send(JSON.stringify({ type: "reload" }));
   document.getElementById("reset").onclick = () => {
     ws.send(JSON.stringify({ type: "reset" }));

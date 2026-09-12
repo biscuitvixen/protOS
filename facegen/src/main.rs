@@ -89,6 +89,12 @@ enum Command {
         /// Set an input for the frame, e.g. --set jawOpen=1 (repeatable).
         #[arg(long = "set", value_name = "NAME=VALUE")]
         inputs: Vec<String>,
+        /// Scene to draw: face or cube.
+        #[arg(long, default_value = "face")]
+        scene: String,
+        /// Time in seconds for animated scenes.
+        #[arg(long, default_value_t = 0.0)]
+        time: f32,
     },
 }
 
@@ -125,13 +131,19 @@ fn main() -> anyhow::Result<()> {
             adapter,
             test_pattern,
             inputs,
+            scene,
+            time,
         } => {
+            let scene = facegen::render::Scene::parse(&scene)
+                .ok_or_else(|| anyhow::anyhow!("no scene named {scene:?}"))?;
             render_once(
                 &load_layout(&layout)?,
                 &out,
                 adapter.as_deref(),
                 test_pattern,
                 &inputs,
+                scene,
+                time,
             )?;
             Ok(())
         }
@@ -197,6 +209,8 @@ fn render_once(
     adapter: Option<&str>,
     test_pattern: bool,
     inputs: &[String],
+    scene: facegen::render::Scene,
+    time: f32,
 ) -> anyhow::Result<()> {
     let mut store = InputStore::new();
     for spec in inputs {
@@ -214,12 +228,14 @@ fn render_once(
         shader::face_source()
     };
     let mut renderer = Renderer::new(gpu, layout, &source)?;
+    renderer.set_scene(scene);
     let face = Face::default_face();
     let mut rig = Rig::new(&face)?;
     rig.update(&face, store.values(), 0.0);
     let uniforms = rig.pack(
         &face,
         &FrameState {
+            time_s: time,
             face_scale: fit_scale(layout, face.box_mm),
             ..Default::default()
         },

@@ -40,6 +40,8 @@ pub enum ClientMessage {
     Reset,
     /// Re-read the shader and face files now.
     Reload,
+    /// Show a scene by name.
+    Scene { name: String },
 }
 
 pub fn encode_frame(frame: &Frame, generation: u32) -> Vec<u8> {

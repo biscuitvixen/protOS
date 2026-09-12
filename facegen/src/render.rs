@@ -6,6 +6,7 @@
 //! trip is the fixed cost, and overlapping it with the next frame is a
 //! later optimisation to be measured on the Pi, not assumed.
 
+pub mod cube;
 pub mod gpu;
 pub mod panels;
 pub mod pipeline;
@@ -18,16 +19,45 @@ use wgpu::util::DeviceExt;
 use crate::layout::Layout;
 use crate::layout::atlas::Atlas;
 use crate::sinks::Frame;
+use cube::CubePass;
 use gpu::Gpu;
 use pipeline::PanelPipeline;
 use target::RenderTarget;
-use uniforms::FaceUniforms;
+use uniforms::{FaceUniforms, UniformBinding};
+
+/// What the atlas shows. Scenes are exclusive: one clears and draws
+/// the whole atlas each frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scene {
+    Face,
+    Cube,
+}
+
+impl Scene {
+    pub const NAMES: [&'static str; 2] = ["face", "cube"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "face" => Some(Scene::Face),
+            "cube" => Some(Scene::Cube),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        Self::NAMES[self as usize]
+    }
+}
 
 pub struct Renderer {
     gpu: Gpu,
     atlas: Atlas,
     target: RenderTarget,
+    uniforms: UniformBinding,
     pipeline: PanelPipeline,
+    cube: CubePass,
+    scene: Scene,
     instances: wgpu::Buffer,
     instance_count: u32,
     seq: u64,
@@ -39,7 +69,16 @@ impl Renderer {
     pub fn new(gpu: Gpu, layout: &Layout, source: &str) -> anyhow::Result<Self> {
         let atlas = Atlas::build(layout)?;
         let target = RenderTarget::new(&gpu.device, atlas.width, atlas.height);
-        let pipeline = PanelPipeline::new(&gpu.device, target::FORMAT, source)?;
+        let uniforms = UniformBinding::new(&gpu.device);
+        let pipeline = PanelPipeline::new(&gpu.device, target::FORMAT, &uniforms, source)?;
+        let cube = CubePass::new(
+            &gpu.device,
+            target::FORMAT,
+            (atlas.width, atlas.height),
+            &uniforms,
+            &shader::cube_source(),
+            CubePass::windows(layout, &atlas.rects),
+        )?;
         let instance_data = panels::instances(layout, &atlas);
         let instances = gpu
             .device
@@ -52,7 +91,10 @@ impl Renderer {
             gpu,
             atlas,
             target,
+            uniforms,
             pipeline,
+            cube,
+            scene: Scene::Face,
             instances,
             instance_count: instance_data.len() as u32,
             seq: 0,
@@ -62,8 +104,17 @@ impl Renderer {
     /// Replace the pass with a newly assembled source. On failure the
     /// current pipeline keeps rendering.
     pub fn rebuild_pipeline(&mut self, source: &str) -> anyhow::Result<()> {
-        self.pipeline = PanelPipeline::new(&self.gpu.device, target::FORMAT, source)?;
+        self.pipeline =
+            PanelPipeline::new(&self.gpu.device, target::FORMAT, &self.uniforms, source)?;
         Ok(())
+    }
+
+    pub fn scene(&self) -> Scene {
+        self.scene
+    }
+
+    pub fn set_scene(&mut self, scene: Scene) {
+        self.scene = scene;
     }
 
     pub fn atlas(&self) -> &Atlas {
@@ -89,32 +140,47 @@ impl Renderer {
             1.0 / self.atlas.width as f32,
             1.0 / self.atlas.height as f32,
         ];
-        self.pipeline.write_uniforms(&self.gpu.queue, &u);
+        self.uniforms.write(&self.gpu.queue, &u);
         let mut encoder = self
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame"),
             });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("panels"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.target.view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            self.pipeline
-                .draw(&mut pass, &self.instances, self.instance_count);
+        match self.scene {
+            Scene::Face => {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("panels"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.target.view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                self.pipeline.draw(
+                    &mut pass,
+                    &self.uniforms,
+                    &self.instances,
+                    self.instance_count,
+                );
+            }
+            Scene::Cube => {
+                self.cube.draw(
+                    &self.gpu.queue,
+                    &mut encoder,
+                    &self.target.view,
+                    &self.uniforms,
+                    u.g.time[0],
+                );
+            }
         }
         self.target.copy_to_staging(&mut encoder);
         let submission = self.gpu.queue.submit([encoder.finish()]);

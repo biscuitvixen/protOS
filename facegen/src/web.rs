@@ -199,6 +199,21 @@ fn apply_client_message(message: ClientMessage, shared: &Shared) -> Option<Serve
             shared.inputs.lock().expect("input store lock").reset();
             None
         }
+        ClientMessage::Scene { name } => match crate::render::Scene::parse(&name) {
+            Some(scene) => {
+                let sent = shared
+                    .control
+                    .lock()
+                    .expect("control channel lock")
+                    .send(Control::SetScene(scene));
+                sent.err().map(|_| ServerMessage::Error {
+                    message: "render thread has stopped".into(),
+                })
+            }
+            None => Some(ServerMessage::Error {
+                message: format!("no scene named {name:?}"),
+            }),
+        },
         ClientMessage::Reload => {
             let control = shared.control.lock().expect("control channel lock");
             let sent = control

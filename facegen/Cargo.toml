@@ -12,6 +12,7 @@ axum.workspace = true
 bytemuck.workspace = true
 bytes.workspace = true
 clap.workspace = true
+glam.workspace = true
 naga.workspace = true
 notify.workspace = true
 png.workspace = true

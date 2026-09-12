@@ -2,26 +2,25 @@
 //! shader, drawing every panel instance into the atlas.
 //!
 //! The pass takes an already assembled WGSL module (see `shader.rs`)
-//! and binds the face uniform block at group 0. Shader and pipeline
-//! creation run inside a validation error scope so a broken shader
-//! surfaces as an error rather than a panic; hot reload later relies
+//! and binds the shared face uniform block at group 0. Shader and
+//! pipeline creation run inside a validation error scope so a broken
+//! shader surfaces as an error rather than a panic; hot reload relies
 //! on that.
 
 use anyhow::anyhow;
 
 use super::panels::INSTANCE_LAYOUT;
-use super::uniforms::FaceUniforms;
+use super::uniforms::UniformBinding;
 
 pub struct PanelPipeline {
     pipeline: wgpu::RenderPipeline,
-    uniforms: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
 }
 
 impl PanelPipeline {
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
+        shared: &UniformBinding,
         source: &str,
     ) -> anyhow::Result<Self> {
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -29,36 +28,9 @@ impl PanelPipeline {
             label: Some("panel pass"),
             source: wgpu::ShaderSource::Wgsl(source.into()),
         });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("face uniforms"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("face uniforms"),
-            size: FaceUniforms::SIZE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("face uniforms"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniforms.as_entire_binding(),
-            }],
-        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("panel pass"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
+            bind_group_layouts: &[Some(&shared.layout)],
             immediate_size: 0,
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -93,20 +65,18 @@ impl PanelPipeline {
         if let Some(error) = pollster::block_on(scope.pop()) {
             return Err(anyhow!("shader or pipeline rejected: {error}"));
         }
-        Ok(Self {
-            pipeline,
-            uniforms,
-            bind_group,
-        })
+        Ok(Self { pipeline })
     }
 
-    pub fn write_uniforms(&self, queue: &wgpu::Queue, uniforms: &FaceUniforms) {
-        queue.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(uniforms));
-    }
-
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, instances: &wgpu::Buffer, count: u32) {
+    pub fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        shared: &UniformBinding,
+        instances: &wgpu::Buffer,
+        count: u32,
+    ) {
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_bind_group(0, &shared.bind_group, &[]);
         pass.set_vertex_buffer(0, instances.slice(..));
         pass.draw(0..4, 0..count);
     }

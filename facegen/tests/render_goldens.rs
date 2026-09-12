@@ -13,7 +13,7 @@ use facegen::face::{Face, FrameState, fit_scale};
 use facegen::layout::{Layout, presets};
 use facegen::render::gpu::Gpu;
 use facegen::render::uniforms::FaceUniforms;
-use facegen::render::{Renderer, shader};
+use facegen::render::{Renderer, Scene, shader};
 use facegen::rig::Rig;
 use facegen::sinks::Frame;
 use facegen::sinks::png::{read_png_rgb, write_png};
@@ -38,6 +38,18 @@ fn render(gpu: Gpu, layout: &Layout, source: &str, uniforms: &FaceUniforms) -> (
     let mut frame = Frame::default();
     renderer
         .render(uniforms, &mut frame)
+        .expect("frame renders");
+    (renderer.into_gpu(), frame)
+}
+
+fn render_scene(gpu: Gpu, layout: &Layout, scene: Scene, time_s: f32) -> (Gpu, Frame) {
+    let mut renderer = Renderer::new(gpu, layout, &shader::face_source()).expect("renderer builds");
+    renderer.set_scene(scene);
+    let mut uniforms = face_uniforms(layout);
+    uniforms.g.time[0] = time_s;
+    let mut frame = Frame::default();
+    renderer
+        .render(&uniforms, &mut frame)
         .expect("frame renders");
     (renderer.into_gpu(), frame)
 }
@@ -96,6 +108,8 @@ fn every_preset_renders_the_test_pattern_and_the_default_face_to_their_goldens()
         check_golden(&format!("pattern_{name}"), &frame);
         let (g, frame) = render(g, &layout, &shader::face_source(), &face_uniforms(&layout));
         check_golden(&format!("face_{name}"), &frame);
+        let (g, frame) = render_scene(g, &layout, Scene::Cube, 0.7);
+        check_golden(&format!("cube_{name}"), &frame);
         gpu = g;
     }
 }
@@ -205,4 +219,28 @@ fn the_default_face_puts_a_lit_eye_and_an_empty_corner_where_the_toml_says() {
         "left mouth band missing: {:?}",
         px(&frame, 90, 24)
     );
+}
+
+#[test]
+fn the_cube_sits_at_each_panel_centre_and_leaves_the_corners_dark() {
+    let layout = presets::load("two_64x32").unwrap();
+    let (_, frame) = render_scene(lavapipe(), &layout, Scene::Cube, 0.7);
+    let lit = |c: [u8; 3]| c.iter().any(|&v| v > 60);
+    assert!(
+        lit(px(&frame, 32, 16)),
+        "right panel centre should show the cube: {:?}",
+        px(&frame, 32, 16)
+    );
+    assert!(
+        lit(px(&frame, 96, 16)),
+        "left panel centre should show the cube: {:?}",
+        px(&frame, 96, 16)
+    );
+    for (x, y) in [(0, 0), (63, 31), (64, 0), (127, 31)] {
+        assert!(
+            is_black(px(&frame, x, y)),
+            "corner ({x},{y}) should be dark: {:?}",
+            px(&frame, x, y)
+        );
+    }
 }
