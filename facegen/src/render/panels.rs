@@ -19,7 +19,7 @@ pub struct PanelInstance {
     pub m: [f32; 4],
     /// Origin x, y in mm; pitch in mm/px; unused.
     pub origin: [f32; 4],
-    /// Side (0 left, 1 right) and flags.
+    /// Side (0 left, 1 right) and the feature mask (`Panel::feature_mask`).
     pub side_flags: [u32; 2],
 }
 
@@ -68,7 +68,7 @@ pub fn instances(layout: &Layout, atlas: &Atlas) -> Vec<PanelInstance> {
                         Side::Left => 0,
                         Side::Right => 1,
                     },
-                    0,
+                    panel.feature_mask(),
                 ],
             }
         })
@@ -108,12 +108,23 @@ mod tests {
             [0.0, -48.0, 3.0, 0.0],
             "right origin and pitch"
         );
-        assert_eq!(inst[0].side_flags, [1, 0], "right side flag");
+        assert_eq!(inst[0].side_flags, [1, 7], "right side flag, every feature");
         assert_eq!(
             inst[1].atlas_rect,
             [64.0, 0.0, 64.0, 32.0],
             "left atlas rect"
         );
-        assert_eq!(inst[1].side_flags, [0, 0], "left side flag");
+        assert_eq!(inst[1].side_flags, [0, 7], "left side flag, every feature");
+    }
+
+    #[test]
+    fn six_panel_instances_carry_one_feature_each_in_chain_order() {
+        let layout = presets::load("six_panel").unwrap();
+        let atlas = Atlas::build(&layout).unwrap();
+        let masks: Vec<u32> = instances(&layout, &atlas)
+            .iter()
+            .map(|i| i.side_flags[1])
+            .collect();
+        assert_eq!(masks, [1, 2, 4, 1, 2, 4], "eye, mouth, nose per connector");
     }
 }

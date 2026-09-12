@@ -349,7 +349,7 @@ fn print_layout(layout: &Layout) -> io::Result<()> {
         let (min, max) = t.bounds_mm(panel.size_px);
         writeln!(
             out,
-            "\n{:?}  {:?}  {}x{} px @ {} mm  rot {}  connector {} chain {}",
+            "\n{:?}  {:?}  {}x{} px @ {} mm  rot {}  connector {} chain {}  draws {:?}",
             panel.name,
             panel.side,
             panel.width(),
@@ -357,7 +357,8 @@ fn print_layout(layout: &Layout) -> io::Result<()> {
             panel.pitch_mm,
             u16::from(panel.rotation),
             panel.connector,
-            panel.chain_index
+            panel.chain_index,
+            panel.features
         )?;
         writeln!(
             out,

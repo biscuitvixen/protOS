@@ -55,9 +55,20 @@ fn render_scene(gpu: Gpu, layout: &Layout, scene: Scene, time_s: f32) -> (Gpu, F
 }
 
 fn face_uniforms(layout: &Layout) -> FaceUniforms {
+    face_uniforms_with(layout, &[])
+}
+
+/// Uniforms for the default face with some inputs set by name.
+fn face_uniforms_with(layout: &Layout, inputs: &[(&str, f32)]) -> FaceUniforms {
     let face = Face::default_face();
     let mut rig = Rig::new(&face).unwrap();
-    rig.update(&face, InputStore::new().values(), 0.0);
+    let mut store = InputStore::new();
+    let now = web_time::Instant::now();
+    for (name, value) in inputs {
+        let id = facegen::contract::lookup_name(name).expect("known input");
+        store.set(id, *value, now);
+    }
+    rig.update(&face, store.values(), 0.0);
     rig.pack(
         &face,
         &FrameState {
@@ -218,6 +229,74 @@ fn the_default_face_puts_a_lit_eye_and_an_empty_corner_where_the_toml_says() {
         eye_colour(px(&frame, 90, 24)),
         "left mouth band missing: {:?}",
         px(&frame, 90, 24)
+    );
+}
+
+#[test]
+fn an_open_jaw_shows_a_lower_tooth_where_the_lip_between_teeth_is_dark() {
+    // two_64x32 at scale 1. Lower tooth apexes sit at x = 30, 74 and
+    // 118 mm. With jawOpen = 1 the lower lip at x = 74 is at
+    // -28 - 3.5 - 0.65 * 22 * (1 - 0.75 * 74/158) + 16 * (74/158)^2 ~ -37.3,
+    // so the tooth spans down to -49.3 and (74, -44) is inside it; at
+    // x = 52, between teeth, the lip is at ~ -40.5 and (52, -44) is
+    // background. Right panel atlas (x/3, (y + 48)/3), left (64 + x/3,
+    // (48 - y)/3).
+    let layout = presets::load("two_64x32").unwrap();
+    let (_, frame) = render(
+        lavapipe(),
+        &layout,
+        &shader::face_source(),
+        &face_uniforms_with(&layout, &[("jawOpen", 1.0)]),
+    );
+    let mouth = |c: [u8; 3]| c[2] > 200 && c[1] > 150 && c[0] < 40;
+    for (x, y, side) in [(24, 1, "right"), (88, 30, "left")] {
+        assert!(
+            mouth(px(&frame, x, y)),
+            "{side} lower tooth missing at atlas ({x},{y}): {:?}",
+            px(&frame, x, y)
+        );
+    }
+    for (x, y, side) in [(17, 1, "right"), (81, 30, "left")] {
+        assert!(
+            is_black(px(&frame, x, y)),
+            "{side} lip between teeth should be background at atlas ({x},{y}): {:?}",
+            px(&frame, x, y)
+        );
+    }
+}
+
+#[test]
+fn six_panel_windows_draw_only_their_own_feature() {
+    // Left eye window is face x 74..170, y -8..40 at atlas (0,0); the
+    // mouth's outer upper tooth reaches into it around face (140, -5),
+    // which lands at atlas (22, 15) and must stay dark. The mouth
+    // window (atlas x 32.., face origin (62, -2)) shows the closed
+    // band at face (100, -21.6) -> atlas (44, 6); the nose window
+    // (atlas x 64.., face origin (-18, 42)) shows the nose centre
+    // (26, 20) -> atlas (78, 7). The fitted scale is a little under 1,
+    // which moves every probe by under a pixel.
+    let layout = presets::load("six_panel").unwrap();
+    let (_, frame) = render(
+        lavapipe(),
+        &layout,
+        &shader::face_source(),
+        &face_uniforms(&layout),
+    );
+    let lit = |c: [u8; 3]| c[2] > 200 && c[1] > 150 && c[0] < 40;
+    assert!(
+        is_black(px(&frame, 22, 15)),
+        "the eye window must not draw the mouth: {:?}",
+        px(&frame, 22, 15)
+    );
+    assert!(
+        lit(px(&frame, 44, 6)),
+        "the mouth window should show the band: {:?}",
+        px(&frame, 44, 6)
+    );
+    assert!(
+        lit(px(&frame, 78, 7)),
+        "the nose window should show the nose: {:?}",
+        px(&frame, 78, 7)
     );
 }
 

@@ -53,7 +53,7 @@
     </fieldset>
     <fieldset>
       <legend>panels (mm, px)</legend>
-      <table id="panels"><thead><tr><th>name</th><th>side</th><th>w</th><th>h</th><th>pitch</th><th>cx</th><th>cy</th><th>rot</th><th>con</th><th>chain</th></tr></thead><tbody></tbody></table>
+      <table id="panels"><thead><tr><th>name</th><th>side</th><th>w</th><th>h</th><th>pitch</th><th>cx</th><th>cy</th><th>rot</th><th>con</th><th>chain</th><th>draws</th></tr></thead><tbody></tbody></table>
       <div style="margin-top:0.5em"><button id="apply">apply</button></div>
     </fieldset>
   </aside>
@@ -158,6 +158,7 @@ function applyLayout(msg) {
     <td><select name="rot">${[0, 90, 180, 270].map(r => `<option ${p.rotation === r ? "selected" : ""}>${r}</option>`).join("")}</select></td>
     <td><input class="short" type="number" name="con" value="${p.connector}"></td>
     <td><input class="short" type="number" name="chain" value="${p.chain_index}"></td>
+    <td><input type="text" name="features" value="${p.features.join(",")}"></td>
   </tr>`).join("");
   status.textContent = `${msg.gpu} | ${msg.layout.name} | atlas ${msg.atlas_width}x${msg.atlas_height} | gen ${msg.generation}`;
 }
@@ -270,6 +271,7 @@ function connect() {
         centre_mm: [Number(field(row, "cx")), Number(field(row, "cy"))],
         rotation: Number(field(row, "rot")),
         connector: Number(field(row, "con")), chain_index: Number(field(row, "chain")),
+        features: field(row, "features").split(",").map(s => s.trim()).filter(Boolean),
       })),
     };
     errorBox.textContent = "";

@@ -1,8 +1,10 @@
 # Six 32x16 P3 panels, three per side (eye, mouth, nose), on an
 # Active3 board with one chain per connector. Every panel on one Pi
 # shares the address lines, so all six must have the same scan depth;
-# 32x16 panels are 1/8 scan (three address lines). Centres are a
-# starting proposal with roughly 5 mm bezels; edit to match the visor.
+# 32x16 panels are 1/8 scan (three address lines). Each panel draws
+# one feature, so their footprints in face-space may overlap; centres
+# frame each feature of the default face and are a starting proposal
+# to edit once the visor is measured.
 name = "six_panel"
 
 [driver]
@@ -13,60 +15,66 @@ n_temporal_planes = 0
 
 [[panel]]
 name = "left_eye"
+features = ["eye"]
 side = "left"
 size_px = [32, 16]
 pitch_mm = 3.0
-centre_mm = [150.0, 22.0]
+centre_mm = [122.0, 16.0]
 rotation = 0
 connector = 0
 chain_index = 0
 
 [[panel]]
 name = "left_mouth"
+features = ["mouth"]
 side = "left"
 size_px = [32, 16]
 pitch_mm = 3.0
-centre_mm = [112.0, -38.0]
+centre_mm = [110.0, -26.0]
 rotation = 0
 connector = 0
 chain_index = 1
 
 [[panel]]
 name = "left_nose"
+features = ["nose"]
 side = "left"
 size_px = [32, 16]
 pitch_mm = 3.0
-centre_mm = [48.0, 15.0]
+centre_mm = [30.0, 18.0]
 rotation = 0
 connector = 0
 chain_index = 2
 
 [[panel]]
 name = "right_eye"
+features = ["eye"]
 side = "right"
 size_px = [32, 16]
 pitch_mm = 3.0
-centre_mm = [150.0, 22.0]
+centre_mm = [122.0, 16.0]
 rotation = 0
 connector = 1
 chain_index = 0
 
 [[panel]]
 name = "right_mouth"
+features = ["mouth"]
 side = "right"
 size_px = [32, 16]
 pitch_mm = 3.0
-centre_mm = [112.0, -38.0]
+centre_mm = [110.0, -26.0]
 rotation = 0
 connector = 1
 chain_index = 1
 
 [[panel]]
 name = "right_nose"
+features = ["nose"]
 side = "right"
 size_px = [32, 16]
 pitch_mm = 3.0
-centre_mm = [48.0, 15.0]
+centre_mm = [30.0, 18.0]
 rotation = 0
 connector = 1
 chain_index = 2

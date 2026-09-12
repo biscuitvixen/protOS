@@ -137,6 +137,34 @@ impl Driver {
     }
 }
 
+/// A face feature a panel may draw. A panel composites only the
+/// features it lists, so several panels can look onto overlapping
+/// regions of face-space and each show one feature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Feature {
+    Eye,
+    Mouth,
+    Nose,
+}
+
+impl Feature {
+    pub const ALL: [Feature; 3] = [Feature::Eye, Feature::Mouth, Feature::Nose];
+
+    /// Bit in the per-panel feature mask the face pass tests.
+    pub fn bit(self) -> u32 {
+        match self {
+            Feature::Eye => 1,
+            Feature::Mouth => 2,
+            Feature::Nose => 4,
+        }
+    }
+}
+
+fn all_features() -> Vec<Feature> {
+    Feature::ALL.to_vec()
+}
+
 /// One physical LED panel.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Panel {
@@ -153,9 +181,17 @@ pub struct Panel {
     pub connector: u8,
     /// Position along that connector's chain, 0 nearest the Pi.
     pub chain_index: u8,
+    /// Features this panel draws; every feature when absent.
+    #[serde(default = "all_features")]
+    pub features: Vec<Feature>,
 }
 
 impl Panel {
+    /// OR of `Feature::bit` over the listed features.
+    pub fn feature_mask(&self) -> u32 {
+        self.features.iter().fold(0, |m, f| m | f.bit())
+    }
+
     pub fn width(&self) -> u32 {
         self.size_px[0]
     }
@@ -257,6 +293,8 @@ pub enum LayoutError {
     NoPanels,
     #[error("panel name {0:?} is used more than once")]
     DuplicateName(String),
+    #[error("panel {0:?} lists no features; drop the `features` key to draw them all")]
+    NoFeatures(String),
     #[error("panel {name:?} has size {size:?}; both dimensions must be positive")]
     BadSize { name: String, size: [u32; 2] },
     #[error("panel {name:?} has pitch {pitch_mm}; it must be positive")]
@@ -330,6 +368,9 @@ impl Layout {
         for (i, p) in self.panels.iter().enumerate() {
             if self.panels[..i].iter().any(|q| q.name == p.name) {
                 return Err(LayoutError::DuplicateName(p.name.clone()));
+            }
+            if p.features.is_empty() {
+                return Err(LayoutError::NoFeatures(p.name.clone()));
             }
             if p.width() == 0 || p.height() == 0 {
                 return Err(LayoutError::BadSize {
@@ -425,6 +466,7 @@ mod tests {
             rotation,
             connector: 0,
             chain_index: 0,
+            features: all_features(),
         }
     }
 

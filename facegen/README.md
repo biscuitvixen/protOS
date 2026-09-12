@@ -7,14 +7,15 @@ The face is not a set of bitmaps. Each feature (eye, mouth, nose) is a
 signed distance field in a WGSL fragment shader, parameterised in
 millimetres: an eye is a bent ellipse with a centre, radii, openness
 and gaze; a mouth is the region between two lip curves with a corner
-lift, an opening and a sawtooth on both lips. Every input is a named float
-in [0, 1] (Project Babble's 45 blendshapes, the ARKit set, the protOS
-eye and voice channels). A rig maps them through a gain table in the
-face TOML onto those parameters, separately for each side so
+lift, an opening and a sawtooth on both lips. Every input is a named
+float in [0, 1] (Project Babble's 45 blendshapes, the ARKit set, the
+protOS eye and voice channels). A rig maps them through a gain table
+in the face TOML onto those parameters, separately for each side so
 expressions can be asymmetric. All panels are rendered into one atlas
 laid out as the LED driver's framebuffer, with each panel carrying its
-own affine into face-space, so panel count, size, pitch and mounting
-are layout data rather than code. A browser page shows the same frames
+own affine into face-space and the list of features it draws, so panel
+count, size, pitch, mounting and which panel shows the mouth are
+layout data rather than code. A browser page shows the same frames
 live.
 
 ## Layout

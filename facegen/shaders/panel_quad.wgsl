@@ -1,7 +1,8 @@
 // Shared vertex stage for every 2D pass: one full-panel quad per
 // instance. The instance carries the panel's atlas rect and its affine
 // into face-space, so the fragment stage receives face-space mm and
-// never knows which panel or side it is drawing.
+// never knows which panel it is drawing; a feature mask says which
+// features that panel composites.
 
 struct PanelInstance {
     @location(0) atlas_rect: vec4<f32>,  // x, y, w, h in atlas px
@@ -15,6 +16,7 @@ struct VsOut {
     @location(0) face_mm: vec2<f32>,
     @location(1) @interpolate(flat) px_mm: f32,
     @location(2) @interpolate(flat) side: u32,
+    @location(3) @interpolate(flat) features: u32,
 };
 
 @vertex
@@ -30,5 +32,6 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: PanelInstance) -> VsOut {
     o.face_mm = inst.origin.xy + inst.m.xy * e.x + inst.m.zw * e.y;
     o.px_mm = inst.origin.z;
     o.side = inst.side_flags.x;
+    o.features = inst.side_flags.y;
     return o;
 }
