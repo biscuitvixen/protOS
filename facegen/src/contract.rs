@@ -11,7 +11,8 @@
 //! Baballonia rc6), so the index doubles as Babble's output index. Then
 //! the 22 ARKit `ARFaceAnchor.BlendShapeLocation` names Babble cannot
 //! produce (eyes, brows, cheekPuff, cheekSquint), then the eight
-//! /protos/eye channels and the voice level from the protOS bus.
+//! /protos/eye channels, the voice level and the 32 voice bands from
+//! the protOS bus.
 //!
 //! Left and Right in a blendshape name are the wearer's own left and
 //! right, as in ARKit, and select which half-face rig the shape drives.
@@ -19,10 +20,15 @@
 //! tongueTwistLeft/Right the suffix is a direction of movement, not a
 //! side, so those carry `Side::Both`. Values are clamped to [0, 1]
 //! except eye gaze x and y, which are [-1, 1] (+x wearer's right, +y up).
+//!
+//! The voice bands are the one vector on the bus: 32 log-spaced band
+//! energies from 80 Hz to 8 kHz as defined by the `protos-audio` crate.
+//! They arrive either as one message with 32 arguments on
+//! [`BANDS_ADDRESS`] or one float at a time on the per-band rows.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use web_time::Instant;
+use web_time::{Duration, Instant};
 
 /// Which facial feature an input drives. The rig groups parameters by
 /// feature; the web harness groups sliders the same way.
@@ -73,6 +79,7 @@ pub enum Source {
     ArKit,
     ProtosEye,
     ProtosVoice,
+    ProtosBands,
 }
 
 /// One row of the input table.
@@ -110,8 +117,13 @@ pub const BABBLE_COUNT: usize = 45;
 pub const ARKIT_EXTRA_COUNT: usize = 22;
 pub const PROTOS_EYE_COUNT: usize = 8;
 pub const PROTOS_VOICE_COUNT: usize = 1;
+pub const PROTOS_BAND_COUNT: usize = 32;
 pub const INPUT_COUNT: usize =
-    BABBLE_COUNT + ARKIT_EXTRA_COUNT + PROTOS_EYE_COUNT + PROTOS_VOICE_COUNT;
+    BABBLE_COUNT + ARKIT_EXTRA_COUNT + PROTOS_EYE_COUNT + PROTOS_VOICE_COUNT + PROTOS_BAND_COUNT;
+/// Index of voiceBand0; the bands are the contiguous tail of the table.
+pub const BANDS_FIRST: usize = INPUT_COUNT - PROTOS_BAND_COUNT;
+/// The vector form: all 32 bands as one message, band 0 first.
+pub const BANDS_ADDRESS: &str = "/protos/voice/bands";
 
 /// A blendshape row: the OSC address is the bare name with a leading
 /// slash, which is Babble's wire format with its default empty prefix.
@@ -140,6 +152,21 @@ macro_rules! bus {
             range: Range::$range,
             source: Source::$source,
             initial: $initial,
+        }
+    };
+}
+
+/// One voice band row; `$n` is the band index as an integer literal.
+macro_rules! band {
+    ($n:literal) => {
+        InputSpec {
+            name: concat!("voiceBand", $n),
+            address: concat!("/protos/voice/band/", $n),
+            feature: Feature::Voice,
+            side: Side::Both,
+            range: Range::Unit,
+            source: Source::ProtosBands,
+            initial: 0.0,
         }
     };
 }
@@ -304,6 +331,39 @@ pub static INPUTS: [InputSpec; INPUT_COUNT] = [
         ProtosVoice,
         0.0
     ),
+    // Voice bands, low to high; see BANDS_ADDRESS for the vector form.
+    band!(0),
+    band!(1),
+    band!(2),
+    band!(3),
+    band!(4),
+    band!(5),
+    band!(6),
+    band!(7),
+    band!(8),
+    band!(9),
+    band!(10),
+    band!(11),
+    band!(12),
+    band!(13),
+    band!(14),
+    band!(15),
+    band!(16),
+    band!(17),
+    band!(18),
+    band!(19),
+    band!(20),
+    band!(21),
+    band!(22),
+    band!(23),
+    band!(24),
+    band!(25),
+    band!(26),
+    band!(27),
+    band!(28),
+    band!(29),
+    band!(30),
+    band!(31),
 ];
 
 /// Address and name lookups, built once on first use.
@@ -334,6 +394,12 @@ pub fn lookup_address(address: &str) -> Option<InputId> {
 /// Resolve a name such as `jawOpen` or `eyeLeftX`.
 pub fn lookup_name(name: &str) -> Option<InputId> {
     INDEX.by_name.get(name).copied()
+}
+
+/// The row for voice band `k`.
+pub fn band_id(k: usize) -> InputId {
+    assert!(k < PROTOS_BAND_COUNT, "band {k} is out of range");
+    InputId((BANDS_FIRST + k) as u8)
 }
 
 /// All input ids in table order.
@@ -395,8 +461,41 @@ impl InputStore {
         }
     }
 
+    /// Store every band from one vector message.
+    pub fn set_bands(&mut self, bands: &[f32; PROTOS_BAND_COUNT], now: Instant) {
+        for (k, &value) in bands.iter().enumerate() {
+            self.set(band_id(k), value, now);
+        }
+    }
+
     pub fn get(&self, id: InputId) -> f32 {
         self.values[id.index()]
+    }
+
+    pub fn bands(&self) -> [f32; PROTOS_BAND_COUNT] {
+        let mut out = [0.0; PROTOS_BAND_COUNT];
+        out.copy_from_slice(&self.values[BANDS_FIRST..]);
+        out
+    }
+
+    /// Dense view with dead voice producers aged out: a voice row not
+    /// written within `max_age` of `now` reads as its initial value, so
+    /// a stream that stops leaves silence rather than a frozen
+    /// spectrum. Tracker rows are never aged; a frozen face is the
+    /// honest picture of a tracker that has stopped.
+    pub fn values_fresh(&self, now: Instant, max_age: Duration) -> [f32; INPUT_COUNT] {
+        let mut out = self.values;
+        for (i, spec) in INPUTS.iter().enumerate() {
+            if !matches!(spec.source, Source::ProtosVoice | Source::ProtosBands) {
+                continue;
+            }
+            let fresh = self.last_seen[i]
+                .is_some_and(|seen| now.saturating_duration_since(seen) <= max_age);
+            if !fresh {
+                out[i] = spec.initial;
+            }
+        }
+        out
     }
 
     pub fn last_seen(&self, id: InputId) -> Option<Instant> {
@@ -494,6 +593,65 @@ mod tests {
             count(Source::ProtosVoice),
             PROTOS_VOICE_COUNT,
             "voice section size changed"
+        );
+        assert_eq!(
+            count(Source::ProtosBands),
+            PROTOS_BAND_COUNT,
+            "band section size changed"
+        );
+    }
+
+    #[test]
+    fn the_bands_are_the_contiguous_tail_named_and_addressed_by_index() {
+        for k in 0..PROTOS_BAND_COUNT {
+            let spec = band_id(k).spec();
+            assert_eq!(spec.name, format!("voiceBand{k}"), "band {k} name");
+            assert_eq!(
+                spec.address,
+                format!("/protos/voice/band/{k}"),
+                "band {k} address"
+            );
+            assert_eq!(spec.source, Source::ProtosBands, "band {k} source");
+        }
+        assert_eq!(
+            band_id(PROTOS_BAND_COUNT - 1).index(),
+            INPUT_COUNT - 1,
+            "the last band is the last row"
+        );
+        assert!(
+            lookup_address(BANDS_ADDRESS).is_none(),
+            "the vector address is not a scalar row"
+        );
+    }
+
+    #[test]
+    fn stale_voice_rows_age_out_but_stale_tracker_rows_do_not() {
+        let mut store = InputStore::new();
+        let t0 = Instant::now();
+        let bands = std::array::from_fn(|k| k as f32 / 31.0);
+        store.set_bands(&bands, t0);
+        store.set(lookup_name("voiceLevel").unwrap(), 0.8, t0);
+        store.set(lookup_name("jawOpen").unwrap(), 0.6, t0);
+        assert_eq!(store.bands(), bands, "bands read back as written");
+        let soon = store.values_fresh(t0 + Duration::from_millis(500), Duration::from_secs(1));
+        assert_eq!(soon[band_id(3).index()], bands[3], "a fresh band is kept");
+        let late = store.values_fresh(t0 + Duration::from_secs(2), Duration::from_secs(1));
+        assert_eq!(late[band_id(3).index()], 0.0, "a stale band ages to zero");
+        assert_eq!(
+            late[lookup_name("voiceLevel").unwrap().index()],
+            0.0,
+            "a stale voice level ages to zero"
+        );
+        assert_eq!(
+            late[lookup_name("jawOpen").unwrap().index()],
+            0.6,
+            "a stale tracker row is left alone"
+        );
+        let never = InputStore::new().values_fresh(t0, Duration::from_secs(1));
+        assert_eq!(
+            never[band_id(0).index()],
+            0.0,
+            "an unwritten band is its initial"
         );
     }
 

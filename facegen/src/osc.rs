@@ -1,8 +1,9 @@
 //! OSC over UDP: the bus every producer speaks.
 //!
 //! One blocking receiver thread owns the socket. Every message is an
-//! address plus one number; the address resolves through the contract
-//! and the value lands in the shared input store. Bundles are walked
+//! address plus one number, except the voice band vector, which is one
+//! address plus 32; the address resolves through the contract and the
+//! values land in the shared input store. Bundles are walked
 //! recursively. Unknown addresses are logged once each so a chatty
 //! producer with a prefix misconfigured shows up in the log without
 //! flooding it. The producer side is a small helper the fake source
@@ -17,7 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use rosc::{OscMessage, OscPacket, OscType};
 
-use crate::contract::InputStore;
+use crate::contract::{BANDS_ADDRESS, InputStore, PROTOS_BAND_COUNT};
 
 /// Babble's default output port; facegen is the single listener.
 pub const DEFAULT_PORT: u16 = 8888;
@@ -91,7 +92,27 @@ pub fn apply_packet(
         }
         OscPacket::Message(message) => {
             stats.messages += 1;
-            let Some(value) = first_number(message) else {
+            if message.addr == BANDS_ADDRESS {
+                let mut bands = [0.0; PROTOS_BAND_COUNT];
+                let mut n = 0;
+                for (slot, value) in bands.iter_mut().zip(message.args.iter().filter_map(number)) {
+                    *slot = value;
+                    n += 1;
+                }
+                if n == PROTOS_BAND_COUNT && message.args.len() == PROTOS_BAND_COUNT {
+                    store.set_bands(&bands, now);
+                } else {
+                    stats.ignored += 1;
+                    if warned.insert(message.addr.clone()) {
+                        tracing::warn!(
+                            args = message.args.len(),
+                            "ignoring a bands message without exactly 32 numbers"
+                        );
+                    }
+                }
+                return;
+            }
+            let Some(value) = message.args.first().and_then(number) else {
                 stats.ignored += 1;
                 return;
             };
@@ -105,10 +126,10 @@ pub fn apply_packet(
     }
 }
 
-/// The message's first argument as a float; Babble sends one float,
-/// other tools sometimes send ints or doubles.
-fn first_number(message: &OscMessage) -> Option<f32> {
-    match message.args.first()? {
+/// An argument as a float; Babble sends floats, other tools sometimes
+/// send ints or doubles.
+fn number(arg: &OscType) -> Option<f32> {
+    match arg {
         OscType::Float(v) => Some(*v),
         OscType::Double(v) => Some(*v as f32),
         OscType::Int(v) => Some(*v as f32),
@@ -159,7 +180,8 @@ impl Stats {
     }
 }
 
-/// A producer: one socket, one destination, one float per message.
+/// A producer: one socket, one destination, one float per message
+/// except the band vector.
 pub struct Sender {
     socket: UdpSocket,
     to: SocketAddr,
@@ -186,6 +208,17 @@ impl Sender {
         let packet = OscPacket::Message(OscMessage {
             addr: address.to_string(),
             args: vec![OscType::Float(value)],
+        });
+        let bytes = rosc::encoder::encode(&packet)?;
+        self.socket.send_to(&bytes, self.to)?;
+        Ok(())
+    }
+
+    /// One message carrying every value, for the band vector.
+    pub fn send_many(&self, address: &str, values: &[f32]) -> anyhow::Result<()> {
+        let packet = OscPacket::Message(OscMessage {
+            addr: address.to_string(),
+            args: values.iter().map(|&v| OscType::Float(v)).collect(),
         });
         let bytes = rosc::encoder::encode(&packet)?;
         self.socket.send_to(&bytes, self.to)?;
@@ -242,6 +275,39 @@ mod tests {
             "two unknown addresses and one non-numeric argument ignored"
         );
         assert_eq!(warned.len(), 1, "an unknown address is remembered once");
+    }
+
+    #[test]
+    fn a_bands_message_fills_every_band_row_and_a_short_one_is_ignored_once() {
+        use crate::contract::band_id;
+        let mut store = InputStore::new();
+        let mut warned = HashSet::new();
+        let mut stats = Stats::new();
+        let now = Instant::now();
+        let bands = |n: usize| {
+            OscPacket::Message(OscMessage {
+                addr: BANDS_ADDRESS.into(),
+                args: (0..n).map(|k| OscType::Float(k as f32 / 31.0)).collect(),
+            })
+        };
+        apply_packet(&bands(32), &mut store, now, &mut warned, &mut stats);
+        assert!(
+            (store.get(band_id(31)) - 1.0).abs() < 1e-6,
+            "the last band should be 1"
+        );
+        assert!(
+            (store.get(band_id(5)) - 5.0 / 31.0).abs() < 1e-6,
+            "band 5 should be 5/31"
+        );
+        assert_eq!(stats.ignored, 0, "a full message is not ignored");
+        apply_packet(&bands(31), &mut store, now, &mut warned, &mut stats);
+        apply_packet(&bands(31), &mut store, now, &mut warned, &mut stats);
+        assert_eq!(stats.ignored, 2, "short messages are ignored");
+        assert_eq!(warned.len(), 1, "a short message is warned once");
+        assert!(
+            (store.get(band_id(31)) - 1.0).abs() < 1e-6,
+            "a short message leaves the rows untouched"
+        );
     }
 
     #[test]

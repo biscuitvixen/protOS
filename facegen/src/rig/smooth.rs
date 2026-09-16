@@ -14,6 +14,9 @@ fn tau(source: Source) -> f32 {
         Source::Babble | Source::ArKit => 0.040,
         Source::ProtosEye => 0.012,
         Source::ProtosVoice => 0.030,
+        // The analyser already applies attack and release; this only
+        // bridges its 100 Hz readouts to the frame rate.
+        Source::ProtosBands => 0.020,
     }
 }
 
