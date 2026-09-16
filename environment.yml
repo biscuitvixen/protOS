@@ -13,3 +13,5 @@ dependencies:
   - ninja
   - pkg-config
   - vulkan-tools
+  # ALSA headers for facegen's optional mic feature (cpal).
+  - alsa-lib

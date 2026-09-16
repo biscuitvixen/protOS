@@ -59,8 +59,9 @@ by the `protos-audio` crate and sent as one OSC message on
 `/protos/voice/bands` (or one float per `/protos/voice/band/N`). A
 producer that stops sending is treated as silent after a second. To
 analyse a microphone in-process instead, build with `--features mic`
-(needs `libasound2-dev` on Linux) and run
-`serve --audio mic [--mic-device NAME]`.
+and run `serve --audio mic [--mic-device NAME]`. That build needs the
+ALSA headers: `libasound2-dev` on Debian, or the workspace ENV's
+`alsa-lib` with `PKG_CONFIG_PATH=$PWD/ENV/lib/pkgconfig` exported.
 
 `--adapter llvmpipe` forces Mesa's software Vulkan on any command.
 
