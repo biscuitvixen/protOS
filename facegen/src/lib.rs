@@ -14,6 +14,8 @@ pub mod face;
 pub mod fake;
 pub mod features;
 pub mod layout;
+#[cfg(all(feature = "mic", not(target_arch = "wasm32")))]
+pub mod mic;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod osc;
 pub mod preview;

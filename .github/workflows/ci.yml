@@ -17,12 +17,12 @@ jobs:
       # rustup reads rust-toolchain.toml and installs the pinned version.
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
-      - name: Install Mesa's software Vulkan driver
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+      - name: Install Mesa's software Vulkan driver and the ALSA headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools libasound2-dev
       - run: vulkaninfo --summary | grep -E 'deviceName|apiVersion' || true
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets --features piomatter -- -D warnings
-      - run: cargo test --features piomatter
+      - run: cargo clippy --all-targets --features piomatter,mic -- -D warnings
+      - run: cargo test --features piomatter,mic
       - name: Check the browser demo for wasm32
         run: |
           rustup target add wasm32-unknown-unknown

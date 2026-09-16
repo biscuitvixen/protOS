@@ -66,6 +66,14 @@ enum Command {
         /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
         #[arg(long)]
         adapter: Option<String>,
+        /// Where voice bands come from: osc (the bus) or mic (analyse an
+        /// input device in-process; needs the `mic` build feature).
+        #[arg(long, default_value = "osc")]
+        audio: String,
+        /// Substring of the input device name for --audio mic; the
+        /// default input device otherwise.
+        #[arg(long)]
+        mic_device: Option<String>,
     },
     /// Send canned blendshape curves over OSC, standing in for a tracker.
     Fake {
@@ -143,10 +151,17 @@ fn main() -> anyhow::Result<()> {
             face,
             sink,
             adapter,
+            audio,
+            mic_device,
         } => {
             let assets = facegen::app::Assets {
                 dir: assets.or_else(facegen::app::Assets::detect),
                 face,
+            };
+            let audio = match audio.as_str() {
+                "osc" => Audio::Osc,
+                "mic" => Audio::Mic { device: mic_device },
+                other => anyhow::bail!("--audio must be osc or mic, got {other:?}"),
             };
             serve(
                 load_layout(&layout)?,
@@ -155,6 +170,7 @@ fn main() -> anyhow::Result<()> {
                 assets,
                 &sink,
                 adapter.as_deref(),
+                audio,
             )?;
             Ok(())
         }
@@ -254,6 +270,12 @@ fn init_logging(verbose: u8) {
         .init();
 }
 
+/// Where `serve` gets its voice bands.
+enum Audio {
+    Osc,
+    Mic { device: Option<String> },
+}
+
 fn serve(
     layout: Layout,
     bind: SocketAddr,
@@ -261,6 +283,7 @@ fn serve(
     assets: facegen::app::Assets,
     sinks: &[String],
     adapter: Option<&str>,
+    audio: Audio,
 ) -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
     let listener = runtime.block_on(facegen::web::bind(bind))?;
@@ -271,6 +294,21 @@ fn serve(
     let gpu = Gpu::new(adapter)?;
     let (shared, _render_thread) = facegen::app::start(gpu, layout, assets, sinks)?;
     let _osc_thread = facegen::osc::start_receiver(osc, std::sync::Arc::clone(&shared.inputs))?;
+    let _mic_thread: Option<std::thread::JoinHandle<()>> = match audio {
+        Audio::Osc => None,
+        #[cfg(feature = "mic")]
+        Audio::Mic { device } => Some(facegen::mic::start(
+            std::sync::Arc::clone(&shared.inputs),
+            device,
+        )?),
+        #[cfg(not(feature = "mic"))]
+        Audio::Mic { device } => {
+            drop(device);
+            anyhow::bail!(
+                "this facegen was built without the mic feature; rebuild with --features mic"
+            )
+        }
+    };
     let port = listener.local_addr()?.port();
     println!("facegen harness:");
     println!("  http://localhost:{port}/");

@@ -57,7 +57,10 @@ cargo run -p facegen -- render --scene cube --time 2.1 --out cube.png
 The voice bands are 32 log-spaced energies from 80 Hz to 8 kHz, defined
 by the `protos-audio` crate and sent as one OSC message on
 `/protos/voice/bands` (or one float per `/protos/voice/band/N`). A
-producer that stops sending is treated as silent after a second.
+producer that stops sending is treated as silent after a second. To
+analyse a microphone in-process instead, build with `--features mic`
+(needs `libasound2-dev` on Linux) and run
+`serve --audio mic [--mic-device NAME]`.
 
 `--adapter llvmpipe` forces Mesa's software Vulkan on any command.
 
