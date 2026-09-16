@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use facegen::contract;
 use facegen::contract::InputStore;
 use facegen::face::{Face, FrameState, fit_scale};
+use facegen::features::mouth::MouthMode;
 use facegen::layout::atlas::Atlas;
 use facegen::layout::{Layout, presets};
 use facegen::render::gpu::Gpu;
@@ -95,6 +96,9 @@ enum Command {
         /// Substring of the GPU adapter name to use, e.g. "llvmpipe".
         #[arg(long)]
         adapter: Option<String>,
+        /// Override the face's mouth mode: jaw or scope.
+        #[arg(long)]
+        mouth_mode: Option<MouthMode>,
     },
     /// Render one frame of the test pattern to a PNG.
     Render {
@@ -119,6 +123,9 @@ enum Command {
         /// Time in seconds for animated scenes.
         #[arg(long, default_value_t = 0.0)]
         time: f32,
+        /// Override the face's mouth mode: jaw or scope.
+        #[arg(long)]
+        mouth_mode: Option<MouthMode>,
     },
 }
 
@@ -165,13 +172,17 @@ fn main() -> anyhow::Result<()> {
             scale,
             out,
             adapter,
+            mouth_mode,
         } => {
             let layout = load_layout(&layout)?;
             let scene = facegen::render::Scene::parse(&scene)
                 .ok_or_else(|| anyhow::anyhow!("no scene named {scene:?}"))?;
             let gpu = Gpu::new(adapter.as_deref())?;
             let mut renderer = Renderer::new(gpu, &layout, &shader::face_source())?;
-            let face = Face::default_face();
+            let mut face = Face::default_face();
+            if let Some(mode) = mouth_mode {
+                face.mouth.mode = mode;
+            }
             let opts = facegen::capture::Options {
                 scene,
                 seconds,
@@ -194,17 +205,26 @@ fn main() -> anyhow::Result<()> {
             inputs,
             scene,
             time,
+            mouth_mode,
         } => {
             let scene = facegen::render::Scene::parse(&scene)
                 .ok_or_else(|| anyhow::anyhow!("no scene named {scene:?}"))?;
+            let mut face = Face::default_face();
+            if let Some(mode) = mouth_mode {
+                face.mouth.mode = mode;
+            }
+            let opts = RenderOnce {
+                test_pattern,
+                scene,
+                time,
+                face,
+            };
             render_once(
                 &load_layout(&layout)?,
                 &out,
                 adapter.as_deref(),
-                test_pattern,
                 &inputs,
-                scene,
-                time,
+                &opts,
             )?;
             Ok(())
         }
@@ -265,14 +285,20 @@ fn serve(
     runtime.block_on(facegen::web::serve(listener, shared))
 }
 
+/// What one `render` frame shows, beyond the layout and the inputs.
+struct RenderOnce {
+    test_pattern: bool,
+    scene: facegen::render::Scene,
+    time: f32,
+    face: Face,
+}
+
 fn render_once(
     layout: &Layout,
     out: &std::path::Path,
     adapter: Option<&str>,
-    test_pattern: bool,
     inputs: &[String],
-    scene: facegen::render::Scene,
-    time: f32,
+    opts: &RenderOnce,
 ) -> anyhow::Result<()> {
     let mut store = InputStore::new();
     for spec in inputs {
@@ -284,20 +310,20 @@ fn render_once(
         store.set(id, value.parse()?, std::time::Instant::now());
     }
     let gpu = Gpu::new(adapter)?;
-    let source = if test_pattern {
+    let source = if opts.test_pattern {
         shader::test_pattern_source()
     } else {
         shader::face_source()
     };
     let mut renderer = Renderer::new(gpu, layout, &source)?;
-    renderer.set_scene(scene);
-    let face = Face::default_face();
-    let mut rig = Rig::new(&face)?;
-    rig.update(&face, store.values(), 0.0);
+    renderer.set_scene(opts.scene);
+    let face = &opts.face;
+    let mut rig = Rig::new(face)?;
+    rig.update(face, store.values(), 0.0);
     let uniforms = rig.pack(
-        &face,
+        face,
         &FrameState {
-            time_s: time,
+            time_s: opts.time,
             face_scale: fit_scale(layout, face.box_mm),
             ..Default::default()
         },

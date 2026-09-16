@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use facegen::contract::InputStore;
 use facegen::face::{Face, FrameState, fit_scale};
+use facegen::features::mouth::MouthMode;
 use facegen::layout::{Layout, presets};
 use facegen::render::gpu::Gpu;
 use facegen::render::uniforms::FaceUniforms;
@@ -60,17 +61,22 @@ fn face_uniforms(layout: &Layout) -> FaceUniforms {
 
 /// Uniforms for the default face with some inputs set by name.
 fn face_uniforms_with(layout: &Layout, inputs: &[(&str, f32)]) -> FaceUniforms {
-    let face = Face::default_face();
-    let mut rig = Rig::new(&face).unwrap();
+    face_uniforms_for(&Face::default_face(), layout, inputs)
+}
+
+/// Uniforms for `face` with some inputs set by name, through the rig
+/// with a zero dt so the scope phase stays at zero.
+fn face_uniforms_for(face: &Face, layout: &Layout, inputs: &[(&str, f32)]) -> FaceUniforms {
+    let mut rig = Rig::new(face).unwrap();
     let mut store = InputStore::new();
     let now = web_time::Instant::now();
     for (name, value) in inputs {
         let id = facegen::contract::lookup_name(name).expect("known input");
         store.set(id, *value, now);
     }
-    rig.update(&face, store.values(), 0.0);
+    rig.update(face, store.values(), 0.0);
     rig.pack(
-        &face,
+        face,
         &FrameState {
             face_scale: fit_scale(layout, face.box_mm),
             ..Default::default()
@@ -230,6 +236,63 @@ fn the_default_face_puts_a_lit_eye_and_an_empty_corner_where_the_toml_says() {
         "left mouth band missing: {:?}",
         px(&frame, 90, 24)
     );
+}
+
+#[test]
+fn a_voiced_band_displaces_the_scope_line_by_its_full_amplitude() {
+    // Scope mode, phase 0, voiceBand18 = 1 alone: the centroid is
+    // 18/31 so the carrier runs 3 + 3 * 18/31 = 4.74 cycles, and at
+    // u = 18/31 its argument is 2.75 turns, sin = -1. The line at
+    // x = 8 + 150 * 18/31 = 95.1 mm drops from the baseline
+    // -28 + 16 * (95.1/158)^2 = -22.2 (idle carrier -1.5 on top: -23.7)
+    // to -32.2. Right panel atlas (x/3, (y + 48)/3): idle row 8, voiced
+    // row 5. Left panel (64 + x/3, (48 - y)/3): idle row 24, voiced 26.
+    let layout = presets::load("two_64x32").unwrap();
+    let mut face = Face::default_face();
+    face.mouth.mode = MouthMode::Scope;
+    let voiced = [("voiceLevel", 1.0), ("voiceBand18", 1.0)];
+    let (gpu, frame) = render(
+        lavapipe(),
+        &layout,
+        &shader::face_source(),
+        &face_uniforms_for(&face, &layout, &voiced),
+    );
+    check_golden("face_scope_voiced_two_64x32", &frame);
+    let mouth = |c: [u8; 3]| c[2] > 200 && c[1] > 150 && c[0] < 40;
+    for (x, y, side) in [(31, 5, "right"), (95, 26, "left")] {
+        assert!(
+            mouth(px(&frame, x, y)),
+            "{side} scope line should dip to atlas ({x},{y}): {:?}",
+            px(&frame, x, y)
+        );
+    }
+    for (x, y, side) in [(31, 8, "right"), (95, 24, "left")] {
+        assert!(
+            is_black(px(&frame, x, y)),
+            "{side} baseline row should be empty while voiced at atlas ({x},{y}): {:?}",
+            px(&frame, x, y)
+        );
+    }
+    let (_, frame) = render(
+        gpu,
+        &layout,
+        &shader::face_source(),
+        &face_uniforms_for(&face, &layout, &[]),
+    );
+    for (x, y, side) in [(31, 8, "right"), (95, 24, "left")] {
+        assert!(
+            mouth(px(&frame, x, y)),
+            "{side} idle scope line should sit on the baseline at atlas ({x},{y}): {:?}",
+            px(&frame, x, y)
+        );
+    }
+    for (x, y, side) in [(31, 5, "right"), (95, 26, "left")] {
+        assert!(
+            is_black(px(&frame, x, y)),
+            "{side} idle line should not reach atlas ({x},{y}): {:?}",
+            px(&frame, x, y)
+        );
+    }
 }
 
 #[test]
