@@ -3,9 +3,9 @@
 # shared settings below are inherited with `key.workspace = true`.
 [workspace]
 resolver = "3"
-members = ["facegen", "facegen/demo", "piomatter-sys"]
+members = ["facegen", "facegen/demo", "piomatter-sys", "protos-audio"]
 # The browser demo only builds for wasm32; native cargo commands skip it.
-default-members = ["facegen", "piomatter-sys"]
+default-members = ["facegen", "piomatter-sys", "protos-audio"]
 
 [workspace.package]
 version = "0.1.0"

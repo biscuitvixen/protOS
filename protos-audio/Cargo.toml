@@ -1,0 +1,10 @@
+[package]
+name = "protos-audio"
+description = "Voice band analysis shared by every producer of /protos/voice/bands"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
