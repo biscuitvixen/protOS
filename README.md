@@ -40,8 +40,14 @@ LED panel frames out. Built and running end to end; see its
 - **Blendshapes drive shape parameters through a rig.** Project
   Babble's 45 shapes, the ARKit set and the protOS eye and voice
   channels are one vocabulary; a gain table in the face TOML maps
-  them onto per-side parameters, so expressions can be asymmetric and
-  the voice level opens the mouth when the tracker is quiet.
+  them onto per-side parameters, so expressions can be asymmetric.
+- **The mouth listens.** By default it is a scope: a thin line along
+  the lip carrying the voice spectrum, bass at the snout tip and
+  treble toward the corner, under a travelling sine that slows to a
+  gentle wobble in silence. The 32 bands come over OSC from whatever
+  is analysing the microphone; the band definition lives in
+  [`protos-audio/`](protos-audio/) so every producer agrees. A jaw
+  mode with lips and teeth is a TOML switch away.
 - **A browser harness shows the panels live**, with a slider for every
   input, layout editing and a scene switch. A spinning cube scene
   turns each panel into a window onto a small 3D world, which is the

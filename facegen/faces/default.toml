@@ -26,7 +26,12 @@ enabled = false
 offset_mm = [0.0, 0.0]
 scale = 0.35
 
+# The scope mouth: a line on the lip baseline carrying the voice
+# spectrum, bass at the snout tip and treble toward the corner, under a
+# travelling sine. The jaw parameters below still author the baseline,
+# thickness and corner, and take over entirely with mode = "jaw".
 [mouth]
+mode = "scope"
 inner_mm = [8.0, -28.0]
 width_mm = 150.0
 thickness_mm = 3.5
@@ -43,6 +48,18 @@ tooth_pitch_mm = 44.0
 tooth_count = 3
 open_taper = 0.75
 colour = "#00d0ff"
+
+# Line displacement in mm: a flat idle wobble in silence, the band
+# envelope scaled by amplitude_mm while voiced. cycles is the carrier's
+# periods across the mouth, plus up to centroid_cycles more as the
+# voice moves toward treble; keep the sum under about 8 on P3.
+[mouth.scope]
+idle_mm = 1.5
+amplitude_mm = 10.0
+cycles = 3.0
+centroid_cycles = 3.0
+speed_hz = 2.0
+idle_speed_hz = 0.35
 
 [nose]
 centre_mm = [26.0, 20.0]

@@ -29,8 +29,10 @@
   WebAssembly, rendering with WebGPU in the browser, with sliders for every input.</p>
 
   <h2>Two 64x32 panels, one per side</h2>
-  <figure><img src="captures/face_two_64x32.png" alt="The default face on two 64x32 panels, talking and blinking">
-  <figcaption>The default face. The right panel is mounted upside down; the layout's per-panel transform handles it.</figcaption></figure>
+  <figure><img src="captures/face_two_64x32.png" alt="The default face on two 64x32 panels, its mouth a spectrum line, talking and blinking">
+  <figcaption>The default face. The mouth is a scope: the voice spectrum along the lip under a travelling sine, settling to a slow wobble in silence. The right panel is mounted upside down; the layout's per-panel transform handles it.</figcaption></figure>
+  <figure><img src="captures/face_jaw_two_64x32.png" alt="The same face with the jaw mouth, opening and closing with teeth">
+  <figcaption>The same face with <code>mode = "jaw"</code>: two lips with a sawtooth of teeth, opening on the jaw blendshape.</figcaption></figure>
   <figure><img src="captures/cube_two_64x32.png" alt="A spinning cube on two panels">
   <figcaption>The cube scene: each side is a window onto a 3D scene, eye 400 mm in front of the face plane.</figcaption></figure>
 
@@ -43,7 +45,7 @@
   <h2>Raw atlas</h2>
   <p>What the LED driver receives: connectors stacked as rows, chains along x, no rotation or mirroring.</p>
   <figure><img src="captures/face_atlas_open.png" alt="The atlas with the mouth open and a left smile" style="width: 512px; max-width: 100%">
-  <figcaption><code>facegen render --set jawOpen=1 --set mouthSmileLeft=0.7</code></figcaption></figure>
+  <figcaption><code>facegen render --mouth-mode jaw --set jawOpen=1 --set mouthSmileLeft=0.7</code></figcaption></figure>
   <figure><img src="captures/pattern_atlas.png" alt="The bring-up test pattern" style="width: 512px; max-width: 100%">
   <figcaption>The bring-up pattern: a 10 mm grid with markers that expose mirror and rotation mistakes.</figcaption></figure>
 </main>

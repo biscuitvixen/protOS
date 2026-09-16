@@ -288,6 +288,7 @@ mod tests {
     fn bands_land_in_the_globals_and_the_mode_packs_into_its_lane() {
         use crate::features::mouth::MouthMode;
         let mut face = Face::default_face();
+        face.mouth.mode = MouthMode::Jaw;
         let mut rig = Rig::new(&face).unwrap();
         rig.update(
             &face,

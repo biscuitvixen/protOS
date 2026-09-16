@@ -64,6 +64,13 @@ fn face_uniforms_with(layout: &Layout, inputs: &[(&str, f32)]) -> FaceUniforms {
     face_uniforms_for(&Face::default_face(), layout, inputs)
 }
 
+/// The default face in jaw mode, for the tests that probe teeth.
+fn jaw_face() -> Face {
+    let mut face = Face::default_face();
+    face.mouth.mode = MouthMode::Jaw;
+    face
+}
+
 /// Uniforms for `face` with some inputs set by name, through the rig
 /// with a zero dt so the scope phase stays at zero.
 fn face_uniforms_for(face: &Face, layout: &Layout, inputs: &[(&str, f32)]) -> FaceUniforms {
@@ -305,11 +312,11 @@ fn an_open_jaw_shows_a_lower_tooth_where_the_lip_between_teeth_is_dark() {
     // background. Right panel atlas (x/3, (y + 48)/3), left (64 + x/3,
     // (48 - y)/3).
     let layout = presets::load("two_64x32").unwrap();
-    let (_, frame) = render(
+    let (gpu, frame) = render(
         lavapipe(),
         &layout,
         &shader::face_source(),
-        &face_uniforms_with(&layout, &[("jawOpen", 1.0)]),
+        &face_uniforms_for(&jaw_face(), &layout, &[("jawOpen", 1.0)]),
     );
     let mouth = |c: [u8; 3]| c[2] > 200 && c[1] > 150 && c[0] < 40;
     for (x, y, side) in [(24, 1, "right"), (88, 30, "left")] {
@@ -326,6 +333,13 @@ fn an_open_jaw_shows_a_lower_tooth_where_the_lip_between_teeth_is_dark() {
             px(&frame, x, y)
         );
     }
+    let (_, frame) = render(
+        gpu,
+        &layout,
+        &shader::face_source(),
+        &face_uniforms_for(&jaw_face(), &layout, &[]),
+    );
+    check_golden("face_jaw_two_64x32", &frame);
 }
 
 #[test]
@@ -343,7 +357,7 @@ fn six_panel_windows_draw_only_their_own_feature() {
         lavapipe(),
         &layout,
         &shader::face_source(),
-        &face_uniforms(&layout),
+        &face_uniforms_for(&jaw_face(), &layout, &[]),
     );
     let lit = |c: [u8; 3]| c[2] > 200 && c[1] > 150 && c[0] < 40;
     assert!(
