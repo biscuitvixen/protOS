@@ -27,6 +27,11 @@ use crate::render::{Renderer, Scene, shader};
 use crate::rig::Rig;
 use crate::sinks::{Frame, FrameSink};
 
+/// A voice producer that has not written for this long is treated as
+/// silent, so the mouth settles to idle instead of holding its last
+/// spectrum.
+const VOICE_MAX_AGE: Duration = Duration::from_secs(1);
+
 /// Render period; the LED refresh is independent of this.
 pub const TICK: Duration = Duration::from_micros(16_667);
 
@@ -309,7 +314,11 @@ fn render_loop(
         state.dt_s = t - state.time_s;
         state.time_s = t;
         state.frame = state.frame.wrapping_add(1);
-        let raw: [f32; INPUT_COUNT] = *shared.inputs.lock().expect("input store lock").values();
+        let raw: [f32; INPUT_COUNT] = shared
+            .inputs
+            .lock()
+            .expect("input store lock")
+            .values_fresh(now, VOICE_MAX_AGE);
         rig.update(&face, &raw, state.dt_s);
         let uniforms = rig.pack(&face, &state);
         let mut frame = Frame::default();

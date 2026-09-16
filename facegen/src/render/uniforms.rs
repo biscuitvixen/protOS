@@ -25,7 +25,7 @@ pub struct MouthUniform {
     pub lips: [f32; 4],
     pub teeth: [f32; 4],
     pub tooth_row: [f32; 4],
-    pub tongue: [f32; 4],
+    pub scope: [f32; 4],
     pub colour: [f32; 4],
 }
 

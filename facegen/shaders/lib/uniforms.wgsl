@@ -13,11 +13,11 @@ struct Eye {
 
 struct Mouth {
     c_w: vec4<f32>,     // inner x, y, width, thickness
-    curve: vec4<f32>,   // corner_dy, unused, gap, lower_dx
+    curve: vec4<f32>,   // corner_dy, mode (0 jaw, 1 scope), gap, lower_dx
     lips: vec4<f32>,    // upper_dy, lower_dy, upper_thickness_scale, lower_thickness_scale
-    teeth: vec4<f32>,   // tooth height, tooth base width, open taper, unused
-    tooth_row: vec4<f32>, // first tooth offset from the inner end, pitch, count, unused
-    tongue: vec4<f32>,  // length, dx, dy, half_width
+    teeth: vec4<f32>,   // tooth height, tooth base width, open taper, voice activity
+    tooth_row: vec4<f32>, // first tooth offset from the inner end, pitch, count, spectral centroid
+    scope: vec4<f32>,   // idle amplitude, voiced amplitude, carrier cycles, carrier phase
     colour: vec4<f32>,
 };
 
